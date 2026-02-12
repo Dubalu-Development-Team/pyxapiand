@@ -18,19 +18,19 @@ Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful 
 ## Installation
 
 ```bash
-pip install xapiand
+pip install pyxapiand
 ```
 
 With optional msgpack support (recommended for better performance):
 
 ```bash
-pip install xapiand[msgpack]
+pip install pyxapiand[msgpack]
 ```
 
 For development (editable install):
 
 ```bash
-git clone https://github.com/pber/xapiand.git
+git clone https://github.com/Dubalu-Development-Team/xapiand.git
 cd xapiand
 pip install -e .[msgpack]
 ```
