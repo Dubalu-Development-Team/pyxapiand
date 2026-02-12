@@ -35,6 +35,33 @@ The client reads config from environment variables, with Django settings as over
 | `XAPIAND_COMMIT` | `settings.XAPIAND_COMMIT` | `False` |
 | `XAPIAND_PREFIX` | `settings.XAPIAND_PREFIX` | `default` |
 
+## Docstring Conventions
+
+All modules, classes, and public functions **must** have docstrings following the
+[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings) format:
+
+- **Modules**: Summary line, extended description, and optional `Example:` section.
+- **Classes**: Summary line, extended description, `Attributes:` section for public attributes, and optional `Example:`.
+- **Functions/Methods**: Summary line, `Args:`, `Returns:`, and `Raises:` sections as applicable.
+
+```python
+def example_function(arg1, arg2):
+    """Summary line describing what this function does.
+
+    Extended description if needed.
+
+    Args:
+        arg1: Description of arg1.
+        arg2: Description of arg2.
+
+    Returns:
+        Description of the return value.
+
+    Raises:
+        ValueError: If arg1 is invalid.
+    """
+```
+
 ## Key Patterns
 
 - All API methods (`search`, `get`, `post`, `put`, `patch`, `merge`, `delete`, `store`, `stats`, `head`) route through `_send_request`, which builds URLs, handles serialization (JSON or msgpack), and deserializes responses.

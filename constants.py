@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
-"""
-Dubalu Framework
-~~~~~~~~~~~~~~~~
+"""Xapian term constants and accuracy ranges for Xapiand.
 
-:author: Dubalu Framework Team. See AUTHORS.
-:copyright: Copyright (c) 2013-2014, deipi.com LLC. All Rights Reserved.
-:license: See LICENSE for more details.
+Defines predefined constants used for configuring Xapian indexing
+accuracy across three domains:
 
-Here typical Xapian terms and accuracy ranges are defined.
+- **Date accuracy**: Terms for temporal granularity from hours to
+  millennia, with predefined range combinations.
+- **Geopoint accuracy**: HTM (Hierarchical Triangular Mesh) levels
+  from 0 to 20, providing spatial accuracy from ~10,000 km down to
+  ~10 m.
+- **Numeric accuracy**: Numeric level constants (powers of 10) with
+  predefined range combinations for different precision needs.
+
+These constants are used when configuring index schemas to control
+the trade-off between index size and query precision.
 """
+from __future__ import annotations
 
 #     ____        __
 #    / __ \____ _/ /____  _____

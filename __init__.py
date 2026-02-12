@@ -20,8 +20,28 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
+"""Xapiand Python client library.
+
+Provides the ``Xapiand`` client class for communicating with a Xapiand
+search engine server over HTTP. Supports JSON and msgpack serialization,
+Django settings integration, and all Xapiand REST operations.
+
+Configuration is read from environment variables (``XAPIAND_HOST``,
+``XAPIAND_PORT``, ``XAPIAND_COMMIT``, ``XAPIAND_PREFIX``), with optional
+overrides from Django settings. A module-level ``client`` singleton is
+created at import time using these defaults.
+
+Example:
+    >>> from xapiand import client
+    >>> results = client.search('myindex', query='hello')
+    >>> results['hits']
+    [...]
+"""
+from __future__ import annotations
+
 import os
 import logging
+from typing import Any
 
 try:
     from django.core.exceptions import ObjectDoesNotExist
@@ -80,16 +100,49 @@ except Exception:
     settings = None
 
 
+type IndexSpec = str | tuple[str, ...] | list[str] | set[str]
+
+
 class Session(requests.Session):
-    def merge(self, url, data=None, **kwargs):
+    """Extended requests session with custom HTTP methods for Xapiand.
+
+    Adds ``MERGE`` and ``STORE`` HTTP methods used by the Xapiand server
+    for partial document updates and binary storage operations.
+    """
+
+    def merge(self, url: str, data: Any = None, **kwargs) -> requests.Response:
+        """Send a MERGE request.
+
+        Args:
+            url: URL for the request.
+            data: Body to attach to the request.
+            **kwargs: Optional arguments passed to ``Session.request``.
+
+        Returns:
+            requests.Response: Server response.
+        """
         return self.request('MERGE', url, data=data, **kwargs)
 
-    def store(self, url, data=None, **kwargs):
+    def store(self, url: str, data: Any = None, **kwargs) -> requests.Response:
+        """Send a STORE request.
+
+        Args:
+            url: URL for the request.
+            data: Body to attach to the request.
+            **kwargs: Optional arguments passed to ``Session.request``.
+
+        Returns:
+            requests.Response: Server response.
+        """
         return self.request('STORE', url, data=data, **kwargs)
 
 
 class NotFoundError(ObjectDoesNotExist):
-    pass
+    """Raised when a requested document is not found (HTTP 404).
+
+    Inherits from Django's ``ObjectDoesNotExist`` when Django is available,
+    otherwise falls back to the base ``Exception`` class.
+    """
 
 
 TransportError = requests.HTTPError
@@ -98,11 +151,30 @@ TransportError = requests.HTTPError
 NA = object()
 
 
-class Xapiand(object):
+class Xapiand:
+    """Client for communicating with a Xapiand search engine server.
 
-    """
-    An object which manages connections to xapiand and acts as a
-    go-between for API calls to it
+    Manages HTTP connections and provides methods for all Xapiand REST
+    operations: search, get, post, put, patch, merge, delete, store,
+    stats, and head.
+
+    All API methods route through ``_send_request``, which builds URLs,
+    handles serialization (JSON or msgpack), and deserializes responses.
+
+    Attributes:
+        host: Xapiand server hostname.
+        port: Xapiand server port.
+        commit: Whether to commit changes immediately by default.
+        prefix: URL prefix prepended to all index paths.
+        default_accept: Default ``Accept`` header for requests.
+        default_accept_encoding: Default ``Accept-Encoding`` header.
+        NotFoundError: Reference to the ``NotFoundError`` exception class.
+        NA: Sentinel object indicating no default value was provided.
+
+    Example:
+        >>> client = Xapiand(host='localhost', port=8880)
+        >>> results = client.search('myindex', query='hello world')
+        >>> doc = client.get('myindex', id='doc1')
     """
 
     NotFoundError = NotFoundError
@@ -124,8 +196,31 @@ class Xapiand(object):
         store=(session.store, 'result'),
     )
 
-    def __init__(self, host=None, port=None, commit=None, prefix=None,
-            default_accept=None, default_accept_encoding=None, *args, **kwargs):
+    def __init__(self, host: str | None = None, port: str | int | None = None,
+            commit: bool | None = None, prefix: str | None = None,
+            default_accept: str | None = None,
+            default_accept_encoding: str | None = None,
+            *args, **kwargs) -> None:
+        """Initialize the Xapiand client.
+
+        Args:
+            host: Server hostname. If it contains a colon, the part after
+                it is used as the port. Defaults to the ``XAPIAND_HOST``
+                environment variable or ``'127.0.0.1'``.
+            port: Server port. Defaults to the ``XAPIAND_PORT`` environment
+                variable or ``8880``.
+            commit: Whether to auto-commit write operations. Defaults to the
+                ``XAPIAND_COMMIT`` environment variable or ``False``.
+            prefix: URL prefix for index paths. Defaults to ``None`` (no
+                prefix).
+            default_accept: Default ``Accept`` header. Defaults to
+                ``'application/x-msgpack'`` if msgpack is available,
+                otherwise ``'application/json'``.
+            default_accept_encoding: Default ``Accept-Encoding`` header.
+                Defaults to ``'deflate, gzip, identity'``.
+            *args: Additional positional arguments (unused).
+            **kwargs: Additional keyword arguments (unused).
+        """
         if host is None:
             host = XAPIAND_HOST
         if port is None:
@@ -137,7 +232,7 @@ class Xapiand(object):
         self.host = host
         self.port = port
         self.commit = commit
-        self.prefix = '{}/'.format(prefix) if prefix else ''
+        self.prefix = f'{prefix}/' if prefix else ''
         if default_accept is None:
             default_accept = 'application/json' if msgpack is None else 'application/x-msgpack'
         self.default_accept = default_accept
@@ -147,41 +242,92 @@ class Xapiand(object):
 
         self.DoesNotExist = NotFoundError
 
-    def _build_url(self, action_request, index, host, port, nodename, id):
+    def _build_url(self, action_request: str, index: IndexSpec,
+            host: str | None, port: str | int | None,
+            nodename: str | None, id: str | None) -> str:
+        """Build the full URL for a Xapiand API request.
+
+        Constructs a URL following the scheme:
+        ``http://{host}:{port}/{prefix}{index}/{id}{@nodename}{:command}``
+
+        Args:
+            action_request: The action type (e.g., ``'search'``, ``'get'``,
+                ``'stats'``). Actions ``'search'`` and ``'stats'`` are
+                appended as ``:command`` suffixes.
+            index: Index name or comma-separated index names. Can also be
+                a list, tuple, or set of index names.
+            host: Server hostname override. Falls back to ``self.host``.
+            port: Server port override. Falls back to ``self.port``.
+            nodename: Optional node name to route the request to.
+            id: Optional document ID.
+
+        Returns:
+            str: The fully constructed URL.
+        """
         if host and ':' in host:
             host, _, port = host.partition(':')
         if not host:
             host = self.host
         if not port:
             port = self.port
-        host = '{}:{}'.format(host, port)
+        host = f'{host}:{port}'
 
         if not isinstance(index, (tuple, list, set)):
             index = index.split(',')
 
-        indexes = ['{}{}'.format(self.prefix, i.strip('/')) for i in set(index)]
+        indexes = [f'{self.prefix}{i.strip("/")}' for i in set(index)]
         index = ','.join(['/'.join((i, id or '')) for i in indexes])
 
-        nodename = '@{}'.format(nodename) if nodename else ''
+        nodename = f'@{nodename}' if nodename else ''
 
         if action_request in ('search', 'stats',):
-            action_request = '{}{}'.format(COMMAND_PREFIX, action_request)
+            action_request = f'{COMMAND_PREFIX}{action_request}'
         else:
             action_request = ''
 
-        return 'http://{}/{}{}{}'.format(host, index, nodename, action_request)
+        return f'http://{host}/{index}{nodename}{action_request}'
 
-    def _send_request(self, action_request, index, host=None, port=None,
-            nodename=None, id=None, body=None, default=NA, **kwargs):
-        """
-        :arg action_request: Perform index, delete, serch, stats, patch, head actions per request
-        :arg query: Query to process on xapiand
-        :arg index: index path
-        :arg host: address to connect to xapiand
-        :arg port: port to connect to xapiand
-        :arg nodename: Node name, if empty is assigned randomly
-        :arg id: Document ID
-        :arg body: File or dictionary with the body of the request
+    def _send_request(self, action_request: str, index: IndexSpec,
+            host: str | None = None, port: str | int | None = None,
+            nodename: str | None = None, id: str | None = None,
+            body: dict | list | str | None = None, default: Any = NA,
+            **kwargs) -> DictObject | bytes | Any:
+        """Send an HTTP request to the Xapiand server.
+
+        Central method through which all API operations are routed. Handles
+        URL construction, content serialization (JSON or msgpack), request
+        dispatch, error handling, and response deserialization.
+
+        Args:
+            action_request: The API action to perform. Must be one of
+                ``'search'``, ``'stats'``, ``'get'``, ``'delete'``,
+                ``'head'``, ``'post'``, ``'put'``, ``'patch'``,
+                ``'merge'``, or ``'store'``.
+            index: Index name or comma-separated index names.
+            host: Server hostname override.
+            port: Server port override.
+            nodename: Node name to route the request to.
+            id: Document ID for the request.
+            body: Request body. Can be a dict, list, or file path string.
+            default: Default value to return on 404 for ``patch``,
+                ``merge``, ``delete``, and ``get`` actions. If not
+                provided (``NA``), a ``NotFoundError`` is raised instead.
+            **kwargs: Additional keyword arguments passed to the underlying
+                requests method (e.g., ``params``, ``headers``, ``json``,
+                ``msgpack``).
+
+        Returns:
+            DictObject: Deserialized response content. For search responses,
+                the ``#query`` structure is flattened with ``#hits`` renamed
+                to ``hits``, ``#total_count`` to ``count``, and
+                ``#matches_estimated`` to ``total``.
+
+        Raises:
+            NotFoundError: If the response status is 404 and no ``default``
+                was provided (only for ``patch``, ``merge``, ``delete``,
+                ``get`` actions).
+            requests.HTTPError: If the response status indicates an error
+                (other than handled 404s).
         """
 
         method, key = self._methods[action_request]
@@ -192,7 +338,7 @@ class Xapiand(object):
 
         params = kwargs.pop('params', None)
         if params is not None:
-            kwargs['params'] = dict((k.replace('__', '.'), (v and 1 or 0) if isinstance(v, bool) else v) for k, v in params.items() if k not in ('commit', 'volatile', 'pretty', 'indent') or v)
+            kwargs['params'] = {k.replace('__', '.'): (v and 1 or 0) if isinstance(v, bool) else v for k, v in params.items() if k not in ('commit', 'volatile', 'pretty', 'indent') or v}
 
         kwargs.setdefault('allow_redirects', False)
         headers = kwargs.setdefault('headers', {})
@@ -220,16 +366,16 @@ class Xapiand(object):
                     body = body.copy()
                     schema = body['_schema']
                     if isinstance(schema, dict):
-                        schema['_foreign'] = '{}{}'.format(self.prefix, schema['_foreign'].strip('/'))
+                        schema['_foreign'] = f"{self.prefix}{schema['_foreign'].strip('/')}"
                     else:
-                        schema = '{}{}'.format(self.prefix, schema.strip('/'))
+                        schema = f"{self.prefix}{schema.strip('/')}"
                     body['_schema'] = schema
             if logger.isEnabledFor(logging.DEBUG):
                 try:
                     verb_body = json.dumps(body, ensure_ascii=True)
                 except Exception:
                     verb_body = body
-                logger.debug("@@@>> URL: {}  ::  BODY: {}  ::  KWARGS: {}".format(url, verb_body, kwargs))
+                logger.debug(f"@@@>> URL: {url}  ::  BODY: {verb_body}  ::  KWARGS: {kwargs}")
             if isinstance(body, (dict, list)):
                 if is_msgpack:
                     body = msgpack.dumps(body)
@@ -245,7 +391,7 @@ class Xapiand(object):
                     kwargs['data'] = msgpack.dumps(data)
                 elif is_json:
                     kwargs['data'] = json.dumps(data, ensure_ascii=True)
-            logger.debug("@@@>> URL: {}  ::  KWARGS: {}".format(url, kwargs))
+            logger.debug(f"@@@>> URL: {url}  ::  KWARGS: {kwargs}")
             res = method(url, **kwargs)
 
         if res.status_code == 404 and action_request in ('patch', 'merge', 'delete', 'get'):
@@ -256,8 +402,8 @@ class Xapiand(object):
             try:
                 res.raise_for_status()
             except Exception as exc:
-                print("@@@RRES>> {} :: {}".format(exc, res.content))
-                logger.debug("@@@RES>> {}".format(exc))
+                print(f"@@@RRES>> {exc} :: {res.content}")
+                logger.debug(f"@@@RES>> {exc}")
                 raise
 
         content_type = res.headers.get('content-type', '')
@@ -287,7 +433,37 @@ class Xapiand(object):
 
         return content
 
-    def search(self, index, query=None, partial=None, terms=None, offset=None, check_at_least=None, limit=None, sort=None, language=None, pretty=False, volatile=False, kwargs=None, **kw):
+    def search(self, index: IndexSpec, query: str | None = None,
+            partial: str | None = None, terms: str | None = None,
+            offset: int | str | None = None,
+            check_at_least: int | None = None, limit: int | None = None,
+            sort: str | None = None, language: str | None = None,
+            pretty: bool = False, volatile: bool = False,
+            kwargs: dict | None = None, **kw) -> DictObject:
+        """Search an index for matching documents.
+
+        Args:
+            index: Index name or comma-separated index names to search.
+            query: Query string to search for.
+            partial: Partial query string for autocomplete-style searches.
+            terms: Terms to filter by.
+            offset: Starting offset for results. Values exceeding
+                ``OFFSET_LIMIT`` (100,000) are reset to 0.
+            check_at_least: Minimum number of documents to check.
+            limit: Maximum number of results to return.
+            sort: Field or fields to sort results by.
+            language: Language for query parsing.
+            pretty: If ``True``, request pretty-printed response.
+            volatile: If ``True``, bypass caches and read from disk.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+            **kw: Extra keyword arguments merged into ``kwargs``.
+
+        Returns:
+            DictObject: Search results with keys ``hits`` (list of matching
+                documents), ``count`` (total count), ``total`` (estimated
+                matches), and optionally ``aggregations``.
+        """
         kwargs = kwargs or {}
         kwargs.update(kw)
         kwargs['params'] = dict(
@@ -312,24 +488,49 @@ class Xapiand(object):
             try:
                 offset = int(offset)
             except ValueError:
-                logger.debug("@@@>> INVALID OFFSET: {} (type: {})".format(offset, type(offset)))
+                logger.debug(f"@@@>> INVALID OFFSET: {offset} (type: {type(offset)})")
                 kwargs['params']['offset'] = 0
             else:
                 if offset > OFFSET_LIMIT:  # the offset was probably sent wrong in this case
-                    logger.debug("@@@>> PROBABLY ERR OFFSET: {} (type: {}) :: INDEX: {} :: KWARGS: {}".format(offset, type(offset), index, kwargs))
+                    logger.debug(f"@@@>> PROBABLY ERR OFFSET: {offset} (type: {type(offset)}) :: INDEX: {index} :: KWARGS: {kwargs}")
                     kwargs['params']['offset'] = 0
                 else:
                     kwargs['params']['offset'] = offset
         return self._send_request('search', index, **kwargs)
 
-    def stats(self, index, pretty=False, kwargs=None):
+    def stats(self, index: IndexSpec, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Retrieve statistics for an index.
+
+        Args:
+            index: Index name to retrieve statistics for.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Index statistics from the server.
+        """
         kwargs = kwargs or {}
         kwargs['params'] = dict(
             pretty=pretty,
         )
         return self._send_request('stats', index, **kwargs)
 
-    def head(self, index, id, pretty=False, kwargs=None):
+    def head(self, index: IndexSpec, id: str, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Check if a document exists (HEAD request).
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to check.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Response headers/metadata from the server.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['params'] = dict(
@@ -337,7 +538,28 @@ class Xapiand(object):
         )
         return self._send_request('head', index, **kwargs)
 
-    def count(self, index, body=None, query=None, commit=None, pretty=False, volatile=False, kwargs=None, **kw):
+    def count(self, index: IndexSpec, body: dict | list | str | None = None,
+            query: str | None = None, commit: bool | None = None,
+            pretty: bool = False, volatile: bool = False,
+            kwargs: dict | None = None, **kw) -> DictObject:
+        """Count documents matching a query in an index.
+
+        Internally uses the search endpoint to retrieve counts.
+
+        Args:
+            index: Index name to count documents in.
+            body: Optional request body with search criteria.
+            query: Query string to filter counted documents.
+            commit: Unused (present for API consistency).
+            pretty: If ``True``, request pretty-printed response.
+            volatile: If ``True``, bypass caches and read from disk.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+            **kw: Extra keyword arguments added to request params.
+
+        Returns:
+            DictObject: Search results containing the document count.
+        """
         kwargs = kwargs or {}
         kwargs['params'] = dict(
             pretty=pretty,
@@ -350,11 +572,35 @@ class Xapiand(object):
             kwargs['body'] = body
         return self._send_request('search', index, **kwargs)
 
-    def get(self, index, id, accept=None, default=NA, pretty=False, volatile=False, kwargs=None):
+    def get(self, index: IndexSpec, id: str, accept: str | None = None,
+            default: Any = NA, pretty: bool = False, volatile: bool = False,
+            kwargs: dict | None = None) -> DictObject | Any:
+        """Retrieve a document by ID from an index.
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to retrieve.
+            accept: Override ``Accept`` header for the request (e.g.,
+                ``'application/json'``).
+            default: Value to return if the document is not found. If not
+                provided, a ``NotFoundError`` is raised on 404.
+            pretty: If ``True``, request pretty-printed response.
+            volatile: If ``True``, bypass caches and read from disk.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: The retrieved document, or ``default`` if provided
+                and the document was not found.
+
+        Raises:
+            NotFoundError: If the document is not found and no ``default``
+                was provided.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         if accept is not None:
-            kwargs['headers'] = dict()
+            kwargs['headers'] = {}
             kwargs['headers']['accept'] = accept
 
         kwargs['params'] = dict(
@@ -364,7 +610,25 @@ class Xapiand(object):
         kwargs['default'] = default
         return self._send_request('get', index, **kwargs)
 
-    def delete(self, index, id, commit=None, pretty=False, kwargs=None):
+    def delete(self, index: IndexSpec, id: str, commit: bool | None = None,
+            pretty: bool = False, kwargs: dict | None = None) -> DictObject:
+        """Delete a document by ID from an index.
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to delete.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response confirming deletion.
+
+        Raises:
+            NotFoundError: If the document is not found.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['params'] = dict(
@@ -373,7 +637,23 @@ class Xapiand(object):
         )
         return self._send_request('delete', index, **kwargs)
 
-    def post(self, index, body, commit=None, pretty=False, kwargs=None):
+    def post(self, index: IndexSpec, body: dict | list | str,
+            commit: bool | None = None, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Create a new document in an index (server-assigned ID).
+
+        Args:
+            index: Index name to create the document in.
+            body: Document body as a dict, list, or file path.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the created document metadata.
+        """
         kwargs = kwargs or {}
         kwargs['body'] = body
         kwargs['params'] = dict(
@@ -382,7 +662,24 @@ class Xapiand(object):
         )
         return self._send_request('post', index, **kwargs)
 
-    def put(self, index, body, id, commit=None, pretty=False, kwargs=None):
+    def put(self, index: IndexSpec, body: dict | list | str, id: str,
+            commit: bool | None = None, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Create or replace a document with a specific ID.
+
+        Args:
+            index: Index name for the document.
+            body: Document body as a dict, list, or file path.
+            id: Document ID to assign.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the document metadata.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['body'] = body
@@ -392,10 +689,50 @@ class Xapiand(object):
         )
         return self._send_request('put', index, **kwargs)
 
-    def index(self, index, body, id, commit=None, pretty=False, kwargs=None):
+    def index(self, index: IndexSpec, body: dict | list | str, id: str,
+            commit: bool | None = None, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Create or replace a document (alias for ``put``).
+
+        Args:
+            index: Index name for the document.
+            body: Document body as a dict, list, or file path.
+            id: Document ID to assign.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the document metadata.
+        """
         return self.put(index, body, id, commit, pretty, kwargs)
 
-    def patch(self, index, id, body, commit=None, pretty=False, kwargs=None):
+    def patch(self, index: IndexSpec, id: str, body: dict | list | str,
+            commit: bool | None = None, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Partially update a document by ID.
+
+        Sends a PATCH request, replacing only the fields present in
+        ``body``.
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to update.
+            body: Partial document body with fields to update.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the updated document metadata.
+
+        Raises:
+            NotFoundError: If the document is not found.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['body'] = body
@@ -405,8 +742,31 @@ class Xapiand(object):
         )
         return self._send_request('patch', index, **kwargs)
 
-    def update(self, index, id, body, content_type=None, commit=None, pretty=False,
-            kwargs=None):
+    def update(self, index: IndexSpec, id: str, body: dict | list | str,
+            content_type: str | None = None, commit: bool | None = None,
+            pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Update a document, choosing strategy based on content type.
+
+        If ``content_type`` is specified, performs a full replacement via
+        ``put``. Otherwise, performs a partial merge via ``merge``.
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to update.
+            body: Document body (full or partial, depending on strategy).
+            content_type: If provided, sets the ``Content-Type`` header and
+                uses ``put`` for a full replacement. If ``None``, uses
+                ``merge`` for a partial update.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the document metadata.
+        """
         kwargs = kwargs or {}
         if content_type is not None:
             kwargs.setdefault('headers', {})
@@ -422,8 +782,32 @@ class Xapiand(object):
             kwargs=kwargs,
         )
 
-    def merge(self, index, id, body, content_type=None, commit=None, pretty=False,
-            kwargs=None):
+    def merge(self, index: IndexSpec, id: str, body: dict | list | str,
+            content_type: str | None = None, commit: bool | None = None,
+            pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Partially update a document using the MERGE HTTP method.
+
+        Unlike ``patch``, which uses standard HTTP PATCH, this method uses
+        Xapiand's custom MERGE method for deep-merging document fields.
+
+        Args:
+            index: Index name containing the document.
+            id: Document ID to merge into.
+            body: Partial document body with fields to merge.
+            content_type: Optional ``Content-Type`` header override.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response with the updated document metadata.
+
+        Raises:
+            NotFoundError: If the document is not found.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['body'] = body
@@ -436,7 +820,24 @@ class Xapiand(object):
         )
         return self._send_request('merge', index, **kwargs)
 
-    def store(self, index, id, body, commit=None, pretty=False, kwargs=None):
+    def store(self, index: IndexSpec, id: str, body: dict | list | str,
+            commit: bool | None = None, pretty: bool = False,
+            kwargs: dict | None = None) -> DictObject:
+        """Store binary content for a document using the STORE HTTP method.
+
+        Args:
+            index: Index name for the document.
+            id: Document ID to store content for.
+            body: Binary content or file path to store.
+            commit: Whether to commit immediately. Defaults to
+                ``self.commit``.
+            pretty: If ``True``, request pretty-printed response.
+            kwargs: Additional keyword arguments dict passed to
+                ``_send_request``.
+
+        Returns:
+            DictObject: Server response confirming storage.
+        """
         kwargs = kwargs or {}
         kwargs['id'] = id
         kwargs['body'] = body
