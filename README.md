@@ -298,6 +298,6 @@ assert length == 42
 
 ## License
 
-MIT License - Copyright (c) 2015-2020 [Dubalu LLC](https://dubalu.com/)
+MIT License - Copyright (c) 2015-2026 [Dubalu LLC](https://dubalu.com/)
 
 See [LICENSE](LICENSE) for details.
