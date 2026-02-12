@@ -74,6 +74,7 @@ except ImportError:
 from .collections import DictObject
 
 
+__version__ = '1.0.0'
 __all__ = ['Xapiand', 'TransportError']
 
 logger = logging.getLogger('xapiand')
