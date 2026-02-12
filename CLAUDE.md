@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on Xapian. Published by Dubalu LLC under the MIT license.
 
-**Important**: This codebase targets Python 2/3 compatibility using `six` and `from __future__ import absolute_import`. Note the Python 2-style `print` statement in `__init__.py:263`.
+**Important**: This codebase requires Python 3.12+.
 
 ## Dependencies
 
-- **Required**: `requests`, `six`
+- **Required**: `requests`
 - **Optional**: `msgpack` (preferred serialization when available), Django (for settings integration), `dfw` (Dubalu Framework utilities)
 
 No `setup.py`, `pyproject.toml`, or `requirements.txt` exists yet. No test suite is present.

@@ -20,10 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
-from __future__ import absolute_import
-
-import sys
-import six
 import os
 import logging
 
@@ -260,9 +256,9 @@ class Xapiand(object):
             try:
                 res.raise_for_status()
             except Exception as exc:
-                print "@@@RRES>> {} :: {}".format(exc, res.content)
+                print("@@@RRES>> {} :: {}".format(exc, res.content))
                 logger.debug("@@@RES>> {}".format(exc))
-                six.reraise(*sys.exc_info())
+                raise
 
         content_type = res.headers.get('content-type', '')
         is_msgpack = 'application/x-msgpack' in content_type

@@ -9,8 +9,6 @@ Dubalu Framework
 
 Here typical Xapian terms and accuracy ranges are defined.
 """
-from __future__ import absolute_import, unicode_literals
-
 
 #     ____        __
 #    / __ \____ _/ /____  _____
