@@ -35,6 +35,16 @@ cd pyxapiand
 pip install -e .[msgpack]
 ```
 
+### Python version with pyenv
+
+This project includes a `.python-version` file that pins Python 3.12. If you use [pyenv](https://github.com/pyenv/pyenv), make sure you have a 3.12.x version installed:
+
+```bash
+pyenv install 3.12
+```
+
+This installs the latest available 3.12.x release. pyenv will then automatically select it when you enter the project directory.
+
 ## Quick Start
 
 ```python
