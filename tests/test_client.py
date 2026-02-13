@@ -1,4 +1,4 @@
-"""Tests for xapiand — Session, NotFoundError, and Xapiand client."""
+"""Tests for pyxapiand — Session, NotFoundError, and Xapiand client."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch, mock_open
 import pytest
 import requests
 
-from xapiand import (
+from pyxapiand import (
     NA,
     Xapiand,
     NotFoundError,
@@ -18,7 +18,7 @@ from xapiand import (
     XAPIAND_PORT,
     XAPIAND_PREFIX,
 )
-from xapiand.collections import DictObject
+from pyxapiand.collections import DictObject
 
 
 # ── helpers ────────────────────────────────────────────────────────────
@@ -123,12 +123,12 @@ class TestXapiandInit:
         assert c.prefix == 'idx/'
 
     def test_default_accept_json_when_no_msgpack(self):
-        with patch('xapiand.msgpack', None):
+        with patch('pyxapiand.msgpack', None):
             c = Xapiand()
             assert c.default_accept == 'application/json'
 
     def test_default_accept_msgpack_when_available(self):
-        with patch('xapiand.msgpack', MagicMock()):
+        with patch('pyxapiand.msgpack', MagicMock()):
             c = Xapiand()
             assert c.default_accept == 'application/x-msgpack'
 
@@ -317,7 +317,7 @@ class TestSendRequest:
         mock_msgpack.dumps.return_value = b'\x81\xa1k\xa1v'
         resp = _mock_response(content=_json_content({"ok": True}))
         method = self._patch_method('post', resp)
-        with patch('xapiand.msgpack', mock_msgpack):
+        with patch('pyxapiand.msgpack', mock_msgpack):
             self.client._send_request('post', 'idx', msgpack={'data': 1})
         call_kwargs = method.call_args
         assert 'msgpack' not in call_kwargs.kwargs
@@ -346,7 +346,7 @@ class TestSendRequest:
         c = Xapiand(host='localhost', port=8880, prefix=None,
                      default_accept='application/x-msgpack')
         c._methods = self.client._methods
-        with patch('xapiand.msgpack', mock_msgpack):
+        with patch('pyxapiand.msgpack', mock_msgpack):
             c._send_request('post', 'idx', body={'key': 'val'})
         mock_msgpack.dumps.assert_called_once_with({'key': 'val'})
 
@@ -373,7 +373,7 @@ class TestSendRequest:
         c = Xapiand(host='localhost', port=8880, prefix=None,
                      default_accept='application/x-msgpack')
         c._methods = self.client._methods
-        with patch('xapiand.msgpack', mock_msgpack):
+        with patch('pyxapiand.msgpack', mock_msgpack):
             c._send_request('post', 'idx', data={'k': 'v'})
         mock_msgpack.dumps.assert_called_once_with({'k': 'v'})
 
@@ -388,7 +388,7 @@ class TestSendRequest:
         mock_msgpack.loads.return_value = DictObject(title='hello')
         resp = _mock_response(content=b'\x80', content_type='application/x-msgpack')
         self._patch_method('get', resp)
-        with patch('xapiand.msgpack', mock_msgpack):
+        with patch('pyxapiand.msgpack', mock_msgpack):
             result = self.client._send_request('get', 'idx', id='doc1')
         mock_msgpack.loads.assert_called_once()
         assert result['title'] == 'hello'
@@ -465,7 +465,7 @@ class TestSendRequest:
     def test_debug_logging_body(self):
         resp = _mock_response(content=_json_content({"ok": True}))
         self._patch_method('post', resp)
-        with patch('xapiand.logger') as mock_logger:
+        with patch('pyxapiand.logger') as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             self.client._send_request('post', 'idx', body={'key': 'val'})
             mock_logger.debug.assert_called()
@@ -473,7 +473,7 @@ class TestSendRequest:
     def test_debug_logging_no_body(self):
         resp = _mock_response(content=_json_content({}))
         self._patch_method('get', resp)
-        with patch('xapiand.logger') as mock_logger:
+        with patch('pyxapiand.logger') as mock_logger:
             mock_logger.isEnabledFor.return_value = False
             self.client._send_request('get', 'idx', id='doc')
             mock_logger.debug.assert_called()
@@ -481,11 +481,11 @@ class TestSendRequest:
     def test_debug_logging_body_not_json_serializable(self):
         resp = _mock_response(content=_json_content({"ok": True}))
         self._patch_method('post', resp)
-        with patch('xapiand.logger') as mock_logger:
+        with patch('pyxapiand.logger') as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             # Pass body that will fail json.dumps in debug logging
             body = {'key': object()}
-            with patch('xapiand.json.dumps', side_effect=[Exception("fail"), '{}']) as jd:
+            with patch('pyxapiand.json.dumps', side_effect=[Exception("fail"), '{}']) as jd:
                 self.client._send_request('post', 'idx', body=body)
             mock_logger.debug.assert_called()
 
@@ -831,11 +831,11 @@ class TestXapiandStore:
 
 class TestModuleSingleton:
     def test_client_exists(self):
-        from xapiand import client
+        from pyxapiand import client
         assert isinstance(client, Xapiand)
 
     def test_client_has_defaults(self):
-        from xapiand import client
+        from pyxapiand import client
         assert client.host == XAPIAND_HOST
         assert client.port == XAPIAND_PORT
 
@@ -850,26 +850,26 @@ class TestModuleImportPaths:
         # Temporarily remove requests from sys.modules
         saved = sys.modules.pop('requests', None)
         saved_adapters = sys.modules.pop('requests.adapters', None)
-        saved_xapiand = sys.modules.pop('xapiand', None)
-        saved_xapiand_coll = sys.modules.pop('xapiand.collections', None)
+        saved_pyxapiand = sys.modules.pop('pyxapiand', None)
+        saved_pyxapiand_coll = sys.modules.pop('pyxapiand.collections', None)
         try:
             # Block requests import
             sys.modules['requests'] = None
             with pytest.raises(ImportError, match="Xapiand requires"):
-                importlib.import_module('xapiand')
+                importlib.import_module('pyxapiand')
         finally:
             # Restore
             sys.modules.pop('requests', None)
-            sys.modules.pop('xapiand', None)
-            sys.modules.pop('xapiand.collections', None)
+            sys.modules.pop('pyxapiand', None)
+            sys.modules.pop('pyxapiand.collections', None)
             if saved is not None:
                 sys.modules['requests'] = saved
             if saved_adapters is not None:
                 sys.modules['requests.adapters'] = saved_adapters
-            if saved_xapiand is not None:
-                sys.modules['xapiand'] = saved_xapiand
-            if saved_xapiand_coll is not None:
-                sys.modules['xapiand.collections'] = saved_xapiand_coll
+            if saved_pyxapiand is not None:
+                sys.modules['pyxapiand'] = saved_pyxapiand
+            if saved_pyxapiand_coll is not None:
+                sys.modules['pyxapiand.collections'] = saved_pyxapiand_coll
 
     def test_django_settings_integration(self):
         """Verify Django settings override env vars when available."""
@@ -878,8 +878,8 @@ class TestModuleImportPaths:
         import types
 
         # Save original modules
-        saved_xapiand = sys.modules.pop('xapiand', None)
-        saved_xapiand_coll = sys.modules.pop('xapiand.collections', None)
+        saved_pyxapiand = sys.modules.pop('pyxapiand', None)
+        saved_pyxapiand_coll = sys.modules.pop('pyxapiand.collections', None)
         saved_django = sys.modules.get('django', None)
         saved_django_conf = sys.modules.get('django.conf', None)
         saved_django_core = sys.modules.get('django.core', None)
@@ -906,15 +906,15 @@ class TestModuleImportPaths:
             sys.modules['django.core'] = django_core
             sys.modules['django.core.exceptions'] = django_core_exc
 
-            mod = importlib.import_module('xapiand')
+            mod = importlib.import_module('pyxapiand')
             assert mod.XAPIAND_HOST == 'django-host'
             assert mod.XAPIAND_PORT == 9999
             assert mod.XAPIAND_COMMIT is True
             assert mod.XAPIAND_PREFIX == 'django-prefix'
         finally:
             # Restore all modules
-            sys.modules.pop('xapiand', None)
-            sys.modules.pop('xapiand.collections', None)
+            sys.modules.pop('pyxapiand', None)
+            sys.modules.pop('pyxapiand.collections', None)
             for name, saved in [
                 ('django', saved_django),
                 ('django.conf', saved_django_conf),
@@ -925,7 +925,7 @@ class TestModuleImportPaths:
                     sys.modules[name] = saved
                 else:
                     sys.modules.pop(name, None)
-            if saved_xapiand is not None:
-                sys.modules['xapiand'] = saved_xapiand
-            if saved_xapiand_coll is not None:
-                sys.modules['xapiand.collections'] = saved_xapiand_coll
+            if saved_pyxapiand is not None:
+                sys.modules['pyxapiand'] = saved_pyxapiand
+            if saved_pyxapiand_coll is not None:
+                sys.modules['pyxapiand.collections'] = saved_pyxapiand_coll

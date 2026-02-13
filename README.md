@@ -30,15 +30,15 @@ pip install pyxapiand[msgpack]
 For development (editable install):
 
 ```bash
-git clone https://github.com/Dubalu-Development-Team/xapiand.git
-cd xapiand
+git clone https://github.com/Dubalu-Development-Team/pyxapiand.git
+cd pyxapiand
 pip install -e .[msgpack]
 ```
 
 ## Quick Start
 
 ```python
-from xapiand import Xapiand
+from pyxapiand import Xapiand
 
 client = Xapiand(host="localhost", port=8880)
 
@@ -61,7 +61,7 @@ client.delete("books", id="book1")
 A pre-configured module-level `client` singleton is also available:
 
 ```python
-from xapiand import client
+from pyxapiand import client
 
 results = client.search("myindex", query="hello world")
 print(results.count)  # total count
@@ -228,7 +228,7 @@ Most methods accept these optional parameters:
 ## Error Handling
 
 ```python
-from xapiand import Xapiand, TransportError
+from pyxapiand import Xapiand, TransportError
 
 client = Xapiand()
 
@@ -249,24 +249,24 @@ When Django is installed, `NotFoundError` is a subclass of `django.core.exceptio
 
 ## Utilities
 
-### `xapiand.collections`
+### `pyxapiand.collections`
 
 Dict subclasses with attribute-style access:
 
 ```python
-from xapiand.collections import DictObject, OrderedDictObject
+from pyxapiand.collections import DictObject, OrderedDictObject
 
 obj = DictObject(name="test", value=42)
 obj.name      # "test"
 obj["value"]  # 42
 ```
 
-### `xapiand.constants`
+### `pyxapiand.constants`
 
 Predefined Xapian term constants for configuring index schema accuracy:
 
 ```python
-from xapiand.constants import (
+from pyxapiand.constants import (
     # Date accuracy
     HOUR_TERM, DAY_TERM, MONTH_TERM, YEAR_TERM,
     DAY_TO_YEAR_ACCURACY,     # [day, month, year]
@@ -284,12 +284,12 @@ from xapiand.constants import (
 )
 ```
 
-### `xapiand.utils`
+### `pyxapiand.utils`
 
 Xapian-compatible binary serialization for lengths, strings, and characters:
 
 ```python
-from xapiand.utils import serialise_length, unserialise_length
+from pyxapiand.utils import serialise_length, unserialise_length
 
 encoded = serialise_length(42)
 length, remaining = unserialise_length(encoded)

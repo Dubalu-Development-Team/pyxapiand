@@ -13,7 +13,7 @@ Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful 
 - **Required**: `requests`
 - **Optional**: `msgpack` (preferred serialization when available), Django (for settings integration), `dfw` (Dubalu Framework utilities)
 
-No `setup.py`, `pyproject.toml`, or `requirements.txt` exists yet. No test suite is present.
+The package is configured via `pyproject.toml` and installable with `pip install pyxapiand`.
 
 ## Architecture
 

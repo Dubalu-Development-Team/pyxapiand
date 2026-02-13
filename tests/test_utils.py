@@ -1,9 +1,9 @@
-"""Tests for xapiand.utils — Xapian binary serialization utilities."""
+"""Tests for pyxapiand.utils — Xapian binary serialization utilities."""
 from __future__ import annotations
 
 import pytest
 
-from xapiand.utils import (
+from pyxapiand.utils import (
     serialise_char,
     serialise_length,
     serialise_string,

@@ -29,7 +29,7 @@ dependencies = [
 msgpack = ["msgpack"]
 
 [project.urls]
-Homepage = "https://github.com/Dubalu-Development-Team/xapiand"
+Homepage = "https://github.com/Dubalu-Development-Team/pyxapiand"
 
 [tool.setuptools.packages.find]
 where = ["src"]
