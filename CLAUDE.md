@@ -4,20 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on Xapian. Published by Dubalu LLC under the MIT license.
+`pyxapiand` — Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on Xapian. Published by Dubalu LLC under the MIT license.
 
 **Important**: This codebase requires Python 3.12+.
+
+## Build & Install
+
+The package is configured via `pyproject.toml` (setuptools backend) with a `src/` layout.
+
+```bash
+pip install pyxapiand            # from PyPI
+pip install pyxapiand[msgpack]   # with optional msgpack support
+pip install -e .                 # editable install for development
+```
 
 ## Dependencies
 
 - **Required**: `requests`
 - **Optional**: `msgpack` (preferred serialization when available), Django (for settings integration), `dfw` (Dubalu Framework utilities)
 
-The package is configured via `pyproject.toml` and installable with `pip install pyxapiand`.
+## Testing
+
+Tests live in `tests/` and use `pytest`:
+
+```bash
+pytest              # run all 169 tests
+pytest -v           # verbose output
+pytest tests/test_client.py  # run a single test module
+```
 
 ## Architecture
 
-The package has four modules:
+The package (`src/pyxapiand/`) has four modules:
 
 - **`__init__.py`** — Core client. The `Xapiand` class wraps all HTTP communication with the Xapiand server. A `Session` subclass of `requests.Session` adds custom HTTP methods `MERGE` and `STORE`. A module-level `client` singleton is instantiated at import time.
 - **`collections.py`** — `DictObject` and `OrderedDictObject`: dict subclasses that allow attribute-style access (`obj.key` instead of `obj['key']`). `DictObject` is used as `object_pairs_hook` when deserializing JSON/msgpack responses.
