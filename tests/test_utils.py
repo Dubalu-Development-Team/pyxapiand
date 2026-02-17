@@ -13,9 +13,11 @@ from xapiand.utils import (
 )
 
 
-# ── serialise_length / unserialise_length ──────────────────────────────
+# ── serialise_length / unserialise_length ────────────────────────────────────────────────────────────────────
 
 class TestSerialiseLength:
+    """Tests for serialise_length encoding of integer values."""
+
     def test_zero(self):
         assert serialise_length(0) == chr(0)
 
@@ -36,6 +38,8 @@ class TestSerialiseLength:
 
 
 class TestUnserialiseLength:
+    """Tests for unserialise_length decoding and error handling."""
+
     def test_empty_data_raises(self):
         with pytest.raises(ValueError, match="no data"):
             unserialise_length("")
@@ -64,6 +68,8 @@ class TestUnserialiseLength:
 
 
 class TestRoundtripLength:
+    """Tests for serialise_length/unserialise_length roundtrip consistency."""
+
     @pytest.mark.parametrize("value", [0, 1, 127, 254, 255, 256, 500, 1000, 16383, 16384, 100000])
     def test_roundtrip(self, value):
         encoded = serialise_length(value)
@@ -78,9 +84,11 @@ class TestRoundtripLength:
         assert remaining == "tail"
 
 
-# ── serialise_string / unserialise_string ──────────────────────────────
+# ── serialise_string / unserialise_string ────────────────────────────────────────────────────────────────────
 
 class TestSerialiseString:
+    """Tests for serialise_string length-prefixed encoding."""
+
     def test_empty_string(self):
         result = serialise_string("")
         assert result == chr(0)
@@ -93,6 +101,8 @@ class TestSerialiseString:
 
 
 class TestUnserialiseString:
+    """Tests for unserialise_string decoding and error handling."""
+
     def test_roundtrip(self):
         original = "hello world"
         encoded = serialise_string(original)
@@ -119,9 +129,11 @@ class TestUnserialiseString:
             unserialise_string(encoded)
 
 
-# ── serialise_char / unserialise_char ──────────────────────────────────
+# ── serialise_char / unserialise_char ────────────────────────────────────────────────────────────────────────
 
 class TestSerialiseChar:
+    """Tests for serialise_char single-character encoding."""
+
     def test_single_char(self):
         assert serialise_char("A") == "A"
 
@@ -135,6 +147,8 @@ class TestSerialiseChar:
 
 
 class TestUnserialiseChar:
+    """Tests for unserialise_char decoding and error handling."""
+
     def test_single_char(self):
         char, remaining = unserialise_char("Ahello")
         assert char == "A"

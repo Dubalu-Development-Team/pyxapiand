@@ -5,6 +5,8 @@ from xapiand import constants
 
 
 class TestDateConstants:
+    """Tests for date accuracy term constants and ranges."""
+
     def test_term_values(self):
         assert constants.HOUR_TERM == "hour"
         assert constants.DAY_TERM == "day"
@@ -25,6 +27,8 @@ class TestDateConstants:
 
 
 class TestGeopointConstants:
+    """Tests for HTM geospatial level constants and accuracy ranges."""
+
     def test_level_terms(self):
         assert constants.LEVEL_0_TERM == 0
         assert constants.LEVEL_5_TERM == 5
@@ -37,6 +41,8 @@ class TestGeopointConstants:
 
 
 class TestNumericConstants:
+    """Tests for numeric accuracy level constants and ranges."""
+
     def test_level_terms(self):
         assert constants.LEVEL_10_TERM == 10
         assert constants.LEVEL_100_TERM == 100

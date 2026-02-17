@@ -4,9 +4,11 @@ from __future__ import annotations
 from xapiand.collections import DictObject, OrderedDictObject
 
 
-# ── DictObject ─────────────────────────────────────────────────────────
+# ── DictObject ──────────────────────────────────────────────────────────────────────────────────────────────
 
 class TestDictObject:
+    """Tests for DictObject attribute-style dict access."""
+
     def test_init_kwargs(self):
         obj = DictObject(a=1, b=2)
         assert obj["a"] == 1
@@ -50,9 +52,11 @@ class TestDictObject:
         assert obj.__dict__ is obj
 
 
-# ── OrderedDictObject ──────────────────────────────────────────────────
+# ── OrderedDictObject ───────────────────────────────────────────────────────────────────────────────────────
 
 class TestOrderedDictObject:
+    """Tests for OrderedDictObject attribute-style access with insertion order."""
+
     def test_init_pairs(self):
         obj = OrderedDictObject([("a", 1), ("b", 2), ("c", 3)])
         assert obj.a == 1

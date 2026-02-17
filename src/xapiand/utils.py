@@ -35,6 +35,12 @@ search engine library.
 """
 from __future__ import annotations
 
+__all__ = [
+    'serialise_length', 'unserialise_length',
+    'serialise_string', 'unserialise_string',
+    'serialise_char', 'unserialise_char',
+]
+
 
 def serialise_length(length: int) -> str:
     """Serialize an integer length using Xapian's variable-length encoding.

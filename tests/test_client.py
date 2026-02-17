@@ -20,10 +20,21 @@ from xapiand import (
 from xapiand.collections import DictObject
 
 
-# ── helpers ────────────────────────────────────────────────────────────
+# ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _mock_response(status_code=200, content=b'{}', content_type='application/json',
                    headers=None):
+    """Create a mock httpx.Response for testing.
+
+    Args:
+        status_code: HTTP status code for the response.
+        content: Raw response body bytes.
+        content_type: Value for the Content-Type header.
+        headers: Additional headers to merge into the response.
+
+    Returns:
+        A MagicMock spec'd to httpx.Response with the given attributes.
+    """
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
     resp.content = content
@@ -38,12 +49,22 @@ def _mock_response(status_code=200, content=b'{}', content_type='application/jso
 
 
 def _json_content(data):
+    """Serialize a Python object to JSON-encoded bytes.
+
+    Args:
+        data: Object to serialize.
+
+    Returns:
+        UTF-8 encoded JSON bytes.
+    """
     return json.dumps(data).encode()
 
 
-# ── NotFoundError ──────────────────────────────────────────────────────
+# ── NotFoundError ────────────────────────────────────────────────────────────────────────────────────────────
 
 class TestNotFoundError:
+    """Tests for NotFoundError exception behaviour and accessibility."""
+
     def test_is_exception(self):
         assert issubclass(NotFoundError, Exception)
 
@@ -55,16 +76,20 @@ class TestNotFoundError:
         assert Xapiand.NotFoundError is NotFoundError
 
 
-# ── TransportError ─────────────────────────────────────────────────────
+# ── TransportError ───────────────────────────────────────────────────────────────────────────────────────────
 
 class TestTransportError:
+    """Tests that TransportError aliases httpx.HTTPStatusError."""
+
     def test_is_http_status_error(self):
         assert TransportError is httpx.HTTPStatusError
 
 
-# ── Xapiand.__init__ ──────────────────────────────────────────────────
+# ── Xapiand.__init__ ────────────────────────────────────────────────────────────────────────────────────────
 
 class TestXapiandInit:
+    """Tests for Xapiand client initialization and configuration."""
+
     def test_defaults(self):
         c = Xapiand()
         assert c.host == XAPIAND_HOST
@@ -118,10 +143,13 @@ class TestXapiandInit:
         assert Xapiand.NA is NA
 
 
-# ── Xapiand._build_url ────────────────────────────────────────────────
+# ── Xapiand._build_url ──────────────────────────────────────────────────────────────────────────────────────
 
 class TestBuildUrl:
+    """Tests for Xapiand._build_url URL construction logic."""
+
     def setup_method(self):
+        """Create a client with known host, port, and prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix='default')
 
     def test_search_url(self):
@@ -175,20 +203,33 @@ class TestBuildUrl:
         assert url == 'http://localhost:8880/default/idx/'
 
 
-# ── Xapiand._send_request ─────────────────────────────────────────────
+# ── Xapiand._send_request ────────────────────────────────────────────────────────────────────────────────────
 
 class TestSendRequest:
+    """Tests for Xapiand._send_request HTTP dispatch and response handling."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
     def _patch_method(self, action, response):
+        """Replace the client session with a mock that returns a canned response.
+
+        Args:
+            action: The API action name (unused, kept for interface symmetry).
+            response: The mock httpx.Response to return.
+
+        Returns:
+            The AsyncMock bound to ``session.request``.
+        """
         mock_session = MagicMock()
         mock_session.request = AsyncMock(return_value=response)
         self.client.session = mock_session
         return mock_session.request
 
     def teardown_method(self):
+        """Remove the per-instance session mock so the class attribute is restored."""
         self.client.__dict__.pop('session', None)
 
     async def test_basic_get_json(self):
@@ -472,10 +513,13 @@ class TestSendRequest:
         assert 'field' not in result or isinstance(result, DictObject)
 
 
-# ── Xapiand API methods ───────────────────────────────────────────────
+# ── Xapiand API methods ─────────────────────────────────────────────────────────────────────────────────────
 
 class TestXapiandSearch:
+    """Tests for Xapiand.search parameter handling and delegation."""
+
     def setup_method(self):
+        """Create a client and a default search response mock."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.resp = _mock_response(content=_json_content({
@@ -487,6 +531,11 @@ class TestXapiandSearch:
         }))
 
     def _patch(self):
+        """Patch _send_request to return an empty search result.
+
+        Returns:
+            A context manager that yields the patched mock.
+        """
         return patch.object(self.client, '_send_request',
                             return_value=DictObject(hits=[], count=0, total=0))
 
@@ -552,7 +601,10 @@ class TestXapiandSearch:
 
 
 class TestXapiandStats:
+    """Tests for Xapiand.stats parameter forwarding."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -571,7 +623,10 @@ class TestXapiandStats:
 
 
 class TestXapiandHead:
+    """Tests for Xapiand.head parameter forwarding."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -584,7 +639,10 @@ class TestXapiandHead:
 
 
 class TestXapiandCount:
+    """Tests for Xapiand.count delegation and parameter handling."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -614,7 +672,10 @@ class TestXapiandCount:
 
 
 class TestXapiandGet:
+    """Tests for Xapiand.get retrieval, defaults, and headers."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -645,7 +706,10 @@ class TestXapiandGet:
 
 
 class TestXapiandDelete:
+    """Tests for Xapiand.delete commit handling."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -665,7 +729,10 @@ class TestXapiandDelete:
 
 
 class TestXapiandPost:
+    """Tests for Xapiand.post body and commit handling."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -685,7 +752,10 @@ class TestXapiandPost:
 
 
 class TestXapiandPut:
+    """Tests for Xapiand.put body and id forwarding."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -699,7 +769,10 @@ class TestXapiandPut:
 
 
 class TestXapiandIndex:
+    """Tests that Xapiand.index delegates to put."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -710,7 +783,10 @@ class TestXapiandIndex:
 
 
 class TestXapiandPatch:
+    """Tests for Xapiand.patch partial update dispatching."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -725,7 +801,10 @@ class TestXapiandPatch:
 
 
 class TestXapiandUpdate:
+    """Tests for Xapiand.update routing between put and merge."""
+
     def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
 
@@ -751,7 +830,10 @@ class TestXapiandUpdate:
 
 
 class TestXapiandMerge:
+    """Tests for Xapiand.merge deep-merge dispatching and headers."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -778,7 +860,10 @@ class TestXapiandMerge:
 
 
 class TestXapiandStore:
+    """Tests for Xapiand.store binary content handling."""
+
     def setup_method(self):
+        """Create a client with commit disabled."""
         self.client = Xapiand(host='localhost', port=8880, prefix=None,
                               default_accept='application/json')
         self.client.commit = False
@@ -798,9 +883,11 @@ class TestXapiandStore:
             assert kwargs['params']['commit'] is True
 
 
-# ── Module-level singleton ─────────────────────────────────────────────
+# ── Module-level singleton ───────────────────────────────────────────────────────────────────────────────────
 
 class TestModuleSingleton:
+    """Tests for the module-level Xapiand client singleton."""
+
     def test_client_exists(self):
         from xapiand import client
         assert isinstance(client, Xapiand)
@@ -811,9 +898,11 @@ class TestModuleSingleton:
         assert client.port == XAPIAND_PORT
 
 
-# ── Module-level import paths ──────────────────────────────────────────
+# ── Module-level import paths ────────────────────────────────────────────────────────────────────────────────
 
 class TestModuleImportPaths:
+    """Tests for import-time behaviour with missing or mocked dependencies."""
+
     def test_httpx_import_error(self):
         """Verify ImportError is raised when httpx is not available."""
         import sys

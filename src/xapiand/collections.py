@@ -37,6 +37,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+__all__ = ['DictObject', 'OrderedDictObject']
+
 
 class OrderedDictObject(OrderedDict):
     """Ordered dictionary with attribute-style access.

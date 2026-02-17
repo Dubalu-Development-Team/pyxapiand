@@ -8,6 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Important**: This codebase requires Python 3.12+.
 
+## Code Conventions
+
+- **Python**: 3.12+ only — use modern syntax (f-strings, PEP 695 type hints, `from __future__ import annotations`).
+- **Line length**: 120 characters.
+- **Type hints**: Strict — all public functions and methods must be annotated.
+- **Naming**: `PascalCase` for classes, `snake_case` for functions, `UPPER_CASE` for constants.
+- **Dependencies**: `httpx` is the only required runtime dependency. Do not add new external runtime dependencies.
+- **Docstrings**: All functions, classes, and methods must include Google-style docstrings (see [Docstring Conventions](#docstring-conventions) below).
+- **`__all__`**: Every module must explicitly list all public exports in `__all__`.
+
 ## Build & Install
 
 The package is configured via `pyproject.toml` (setuptools backend) with a `src/` layout.
@@ -80,6 +90,16 @@ def example_function(arg1, arg2):
         ValueError: If arg1 is invalid.
     """
 ```
+
+### Test files
+
+Test modules, test classes, and test helper functions/methods also require docstrings:
+
+- **Test modules**: Summary line describing what is under test (e.g., `"""Tests for xapiand.utils — Xapian binary serialization utilities."""`).
+- **Test classes**: One-line summary describing the unit under test (e.g., `"""Tests for Xapiand._build_url URL construction logic."""`).
+- **Helper functions**: Full Google-style docstring with `Args:` and `Returns:` sections when they accept parameters or return values.
+- **`setup_method` / `teardown_method`**: One-line summary describing fixture intent.
+- **Individual test methods** (`test_*`): Docstrings are optional; the test name should be self-documenting.
 
 ## Key Patterns
 

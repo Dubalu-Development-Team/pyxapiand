@@ -75,7 +75,18 @@ from .collections import DictObject
 
 
 __version__ = '2.0.0'
-__all__ = ['Xapiand', 'TransportError']
+__all__ = [
+    'Xapiand',
+    'NotFoundError',
+    'TransportError',
+    'NA',
+    'client',
+    'IndexSpec',
+    'XAPIAND_HOST',
+    'XAPIAND_PORT',
+    'XAPIAND_COMMIT',
+    'XAPIAND_PREFIX',
+]
 
 logger = logging.getLogger('xapiand')
 
@@ -307,7 +318,11 @@ class Xapiand:
 
         params = kwargs.pop('params', None)
         if params is not None:
-            kwargs['params'] = {k.replace('__', '.'): (v and 1 or 0) if isinstance(v, bool) else v for k, v in params.items() if k not in ('commit', 'volatile', 'pretty', 'indent') or v}
+            kwargs['params'] = {
+                k.replace('__', '.'): (v and 1 or 0) if isinstance(v, bool) else v
+                for k, v in params.items()
+                if k not in ('commit', 'volatile', 'pretty', 'indent') or v
+            }
 
         headers = kwargs.setdefault('headers', {})
         accept = headers.setdefault('accept', self.default_accept)
@@ -460,7 +475,10 @@ class Xapiand:
                 kwargs['params']['offset'] = 0
             else:
                 if offset > OFFSET_LIMIT:  # the offset was probably sent wrong in this case
-                    logger.debug(f"@@@>> PROBABLY ERR OFFSET: {offset} (type: {type(offset)}) :: INDEX: {index} :: KWARGS: {kwargs}")
+                    logger.debug(
+                        f"@@@>> PROBABLY ERR OFFSET: {offset} (type: {type(offset)})"
+                        f" :: INDEX: {index} :: KWARGS: {kwargs}"
+                    )
                     kwargs['params']['offset'] = 0
                 else:
                     kwargs['params']['offset'] = offset
