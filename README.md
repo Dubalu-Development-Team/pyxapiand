@@ -1,19 +1,20 @@
 # Xapiand Python Client
 
-Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on top of [Xapian](https://xapian.org/).
+Async Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on top of [Xapian](https://xapian.org/).
 
 ## Features
 
+- **Fully async** — built on `httpx.AsyncClient` for native `asyncio` support.
 - Full coverage of Xapiand REST operations: search, get, post, put, patch, merge, delete, store, stats, and head.
 - Automatic serialization/deserialization with JSON and [msgpack](https://msgpack.org/) (preferred when available).
 - Django settings integration for seamless configuration in Django projects.
 - Attribute-style access on response objects (`result.hits` instead of `result['hits']`).
-- Custom HTTP methods (`MERGE`, `STORE`) supported via an extended `requests.Session`.
+- Custom HTTP methods (`MERGE`, `STORE`) supported natively via `httpx`.
 
 ## Requirements
 
 - Python 3.12+
-- [`requests`](https://docs.python-requests.org/)
+- [`httpx`](https://www.python-httpx.org/)
 
 ## Installation
 
@@ -32,7 +33,7 @@ For development (editable install):
 ```bash
 git clone https://github.com/Dubalu-Development-Team/pyxapiand.git
 cd pyxapiand
-pip install -e .[msgpack]
+pip install -e ".[msgpack,test]"
 ```
 
 ### Python version with pyenv
@@ -48,24 +49,28 @@ This installs the latest available 3.12.x release. pyenv will then automatically
 ## Quick Start
 
 ```python
+import asyncio
 from xapiand import Xapiand
 
-client = Xapiand(host="localhost", port=8880)
+async def main():
+    client = Xapiand(host="localhost", port=8880)
 
-# Index a document
-client.put("books", body={"title": "The Art of Search", "year": 2024}, id="book1")
+    # Index a document
+    await client.put("books", body={"title": "The Art of Search", "year": 2024}, id="book1")
 
-# Retrieve a document
-doc = client.get("books", id="book1")
-print(doc.title)  # "The Art of Search"
+    # Retrieve a document
+    doc = await client.get("books", id="book1")
+    print(doc.title)  # "The Art of Search"
 
-# Search
-results = client.search("books", query="search")
-for hit in results.hits:
-    print(hit.title)
+    # Search
+    results = await client.search("books", query="search")
+    for hit in results.hits:
+        print(hit.title)
 
-# Delete a document
-client.delete("books", id="book1")
+    # Delete a document
+    await client.delete("books", id="book1")
+
+asyncio.run(main())
 ```
 
 A pre-configured module-level `client` singleton is also available:
@@ -73,7 +78,7 @@ A pre-configured module-level `client` singleton is also available:
 ```python
 from xapiand import client
 
-results = client.search("myindex", query="hello world")
+results = await client.search("myindex", query="hello world")
 print(results.count)  # total count
 print(results.total)  # estimated matches
 ```
@@ -108,12 +113,12 @@ The `host` parameter accepts a `host:port` format (`"192.168.1.100:9000"`), in w
 
 ## API Reference
 
-All API methods return `DictObject` instances, which are dictionaries with attribute-style access.
+All API methods are **async** and return `DictObject` instances, which are dictionaries with attribute-style access.
 
 ### Search
 
 ```python
-results = client.search(
+results = await client.search(
     "myindex",
     query="hello world",    # query string
     partial="hel",          # partial query for autocomplete
@@ -133,7 +138,7 @@ results.total   # estimated matches
 Search with a request body (uses POST internally):
 
 ```python
-results = client.search("myindex", body={
+results = await client.search("myindex", body={
     "_query": {"title": "search engine"},
 })
 ```
@@ -141,39 +146,39 @@ results = client.search("myindex", body={
 ### Count
 
 ```python
-results = client.count("myindex", query="hello")
+results = await client.count("myindex", query="hello")
 print(results.count)
 ```
 
 ### Get
 
 ```python
-doc = client.get("myindex", id="doc1")
+doc = await client.get("myindex", id="doc1")
 
 # With a default value (returns it instead of raising on 404)
-doc = client.get("myindex", id="doc1", default=None)
+doc = await client.get("myindex", id="doc1", default=None)
 ```
 
 ### Create (POST)
 
 ```python
 # Server-assigned ID
-result = client.post("myindex", body={"title": "New Document"})
+result = await client.post("myindex", body={"title": "New Document"})
 ```
 
 ### Create or Replace (PUT)
 
 ```python
-result = client.put("myindex", body={"title": "My Document"}, id="doc1")
+result = await client.put("myindex", body={"title": "My Document"}, id="doc1")
 
 # Alias
-result = client.index("myindex", body={"title": "My Document"}, id="doc1")
+result = await client.index("myindex", body={"title": "My Document"}, id="doc1")
 ```
 
 ### Partial Update (PATCH)
 
 ```python
-result = client.patch("myindex", id="doc1", body={"title": "Updated Title"})
+result = await client.patch("myindex", id="doc1", body={"title": "Updated Title"})
 ```
 
 ### Deep Merge (MERGE)
@@ -181,7 +186,7 @@ result = client.patch("myindex", id="doc1", body={"title": "Updated Title"})
 Uses Xapiand's custom `MERGE` HTTP method for deep-merging fields:
 
 ```python
-result = client.merge("myindex", id="doc1", body={"metadata": {"tags": ["new"]}})
+result = await client.merge("myindex", id="doc1", body={"metadata": {"tags": ["new"]}})
 ```
 
 ### Update
@@ -190,16 +195,16 @@ Chooses strategy based on content type:
 
 ```python
 # Partial merge (default)
-client.update("myindex", id="doc1", body={"title": "Updated"})
+await client.update("myindex", id="doc1", body={"title": "Updated"})
 
 # Full replacement when content_type is specified
-client.update("myindex", id="doc1", body=data, content_type="application/json")
+await client.update("myindex", id="doc1", body=data, content_type="application/json")
 ```
 
 ### Delete
 
 ```python
-client.delete("myindex", id="doc1")
+await client.delete("myindex", id="doc1")
 ```
 
 ### Store
@@ -207,7 +212,7 @@ client.delete("myindex", id="doc1")
 Store binary content using Xapiand's custom `STORE` HTTP method:
 
 ```python
-client.store("myindex", id="doc1", body="/path/to/file.bin")
+await client.store("myindex", id="doc1", body="/path/to/file.bin")
 ```
 
 ### Head
@@ -215,13 +220,13 @@ client.store("myindex", id="doc1", body="/path/to/file.bin")
 Check if a document exists:
 
 ```python
-client.head("myindex", id="doc1")
+await client.head("myindex", id="doc1")
 ```
 
 ### Stats
 
 ```python
-stats = client.stats("myindex")
+stats = await client.stats("myindex")
 ```
 
 ### Common Parameters
@@ -233,26 +238,30 @@ Most methods accept these optional parameters:
 | `commit`  | `bool` | Commit changes immediately (write ops)   |
 | `pretty`  | `bool` | Request pretty-printed response          |
 | `volatile`| `bool` | Bypass caches, read from disk            |
-| `kwargs`  | `dict` | Additional arguments passed to requests  |
+| `kwargs`  | `dict` | Additional arguments passed to httpx     |
 
 ## Error Handling
 
 ```python
+import asyncio
 from xapiand import Xapiand, TransportError
 
-client = Xapiand()
+async def main():
+    client = Xapiand()
 
-# NotFoundError on missing documents
-try:
-    doc = client.get("myindex", id="nonexistent")
-except client.NotFoundError:
-    print("Document not found")
+    # NotFoundError on missing documents
+    try:
+        doc = await client.get("myindex", id="nonexistent")
+    except client.NotFoundError:
+        print("Document not found")
 
-# TransportError (requests.HTTPError) on other HTTP errors
-try:
-    client.search("myindex", query="test")
-except TransportError as e:
-    print(f"HTTP error: {e}")
+    # TransportError (httpx.HTTPStatusError) on other HTTP errors
+    try:
+        await client.search("myindex", query="test")
+    except TransportError as e:
+        print(f"HTTP error: {e}")
+
+asyncio.run(main())
 ```
 
 When Django is installed, `NotFoundError` is a subclass of `django.core.exceptions.ObjectDoesNotExist`, making it compatible with Django's error handling patterns.
@@ -305,6 +314,16 @@ encoded = serialise_length(42)
 length, remaining = unserialise_length(encoded)
 assert length == 42
 ```
+
+## Migrating from v1.x
+
+v2.0 replaces `requests` with `httpx` and makes all API methods **async**. Key changes:
+
+- **All client methods require `await`** — `client.search(...)` becomes `await client.search(...)`.
+- **Dependency changed** — `requests` replaced by `httpx`.
+- **`Session` class removed** — `httpx.AsyncClient` handles custom HTTP methods natively.
+- **`TransportError`** — now aliases `httpx.HTTPStatusError` instead of `requests.HTTPError`.
+- **No `allow_redirects` kwarg** — redirects are disabled at the client level.
 
 ## License
 

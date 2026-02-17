@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`pyxapiand` — Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on Xapian. Published by Dubalu LLC under the MIT license.
+`pyxapiand` — Async Python client library for [Xapiand](https://github.com/pber/xapiand), a RESTful search engine built on Xapian. Published by Dubalu LLC under the MIT license.
 
 **Important**: This codebase requires Python 3.12+.
 
@@ -15,20 +15,21 @@ The package is configured via `pyproject.toml` (setuptools backend) with a `src/
 ```bash
 pip install pyxapiand            # from PyPI
 pip install pyxapiand[msgpack]   # with optional msgpack support
-pip install -e .                 # editable install for development
+pip install -e ".[msgpack,test]" # editable install for development
 ```
 
 ## Dependencies
 
-- **Required**: `requests`
+- **Required**: `httpx`
 - **Optional**: `msgpack` (preferred serialization when available), Django (for settings integration), `dfw` (Dubalu Framework utilities)
+- **Test**: `pytest`, `pytest-asyncio`
 
 ## Testing
 
-Tests live in `tests/` and use `pytest`:
+Tests live in `tests/` and use `pytest` with `pytest-asyncio` (asyncio_mode = "auto"):
 
 ```bash
-pytest              # run all 169 tests
+pytest              # run all 165 tests
 pytest -v           # verbose output
 pytest tests/test_client.py  # run a single test module
 ```
@@ -37,7 +38,7 @@ pytest tests/test_client.py  # run a single test module
 
 The package (`src/xapiand/`) has four modules:
 
-- **`__init__.py`** — Core client. The `Xapiand` class wraps all HTTP communication with the Xapiand server. A `Session` subclass of `requests.Session` adds custom HTTP methods `MERGE` and `STORE`. A module-level `client` singleton is instantiated at import time.
+- **`__init__.py`** — Core async client. The `Xapiand` class wraps all HTTP communication with the Xapiand server via `httpx.AsyncClient`. All API methods are `async def`. Custom HTTP methods (`MERGE`, `STORE`) are handled natively by httpx's `client.request(method, ...)`. A module-level `client` singleton is instantiated at import time.
 - **`collections.py`** — `DictObject` and `OrderedDictObject`: dict subclasses that allow attribute-style access (`obj.key` instead of `obj['key']`). `DictObject` is used as `object_pairs_hook` when deserializing JSON/msgpack responses.
 - **`constants.py`** — Predefined Xapian term constants for date accuracy ranges (hour→millennium), HTM geospatial levels (0→20), and numeric accuracy levels.
 - **`utils.py`** — Xapian-compatible binary serialization/deserialization for lengths, strings, and chars.
@@ -82,7 +83,9 @@ def example_function(arg1, arg2):
 
 ## Key Patterns
 
-- All API methods (`search`, `get`, `post`, `put`, `patch`, `merge`, `delete`, `store`, `stats`, `head`) route through `_send_request`, which builds URLs, handles serialization (JSON or msgpack), and deserializes responses.
+- All API methods (`search`, `get`, `post`, `put`, `patch`, `merge`, `delete`, `store`, `stats`, `head`) are **async** and route through `_send_request`, which builds URLs, handles serialization (JSON or msgpack), and deserializes responses.
+- HTTP requests go through `self.session.request(http_method, url, content=body, **kwargs)` where `session` is an `httpx.AsyncClient` class attribute.
 - Search responses are restructured: `#query` → top-level with `#hits` → `hits`, `#total_count` → `count`, `#matches_estimated` → `total`; `#aggregations` is extracted separately.
 - URL scheme: `http://{host}:{port}/{prefix}{index}/{id}{@nodename}{:command}`
 - 404 responses on `patch`/`merge`/`delete`/`get` raise `NotFoundError` (subclass of Django's `ObjectDoesNotExist` when available) unless a `default` value is provided.
+- `TransportError` is an alias for `httpx.HTTPStatusError`.

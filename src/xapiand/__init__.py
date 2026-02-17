@@ -22,7 +22,7 @@
 #
 """Xapiand Python client library.
 
-Provides the ``Xapiand`` client class for communicating with a Xapiand
+Provides the ``Xapiand`` async client class for communicating with a Xapiand
 search engine server over HTTP. Supports JSON and msgpack serialization,
 Django settings integration, and all Xapiand REST operations.
 
@@ -33,7 +33,7 @@ created at import time using these defaults.
 
 Example:
     >>> from xapiand import client
-    >>> results = client.search('myindex', query='hello')
+    >>> results = await client.search('myindex', query='hello')
     >>> results['hits']
     [...]
 """
@@ -67,14 +67,14 @@ except ImportError:
         msgpack = None
 
 try:
-    import requests
+    import httpx
 except ImportError:
-    raise ImportError("Xapiand requires the installation of the requests module.")
+    raise ImportError("Xapiand requires the installation of the httpx module.")
 
 from .collections import DictObject
 
 
-__version__ = '1.0.0'
+__version__ = '2.0.0'
 __all__ = ['Xapiand', 'TransportError']
 
 logger = logging.getLogger('xapiand')
@@ -104,40 +104,6 @@ except Exception:
 type IndexSpec = str | tuple[str, ...] | list[str] | set[str]
 
 
-class Session(requests.Session):
-    """Extended requests session with custom HTTP methods for Xapiand.
-
-    Adds ``MERGE`` and ``STORE`` HTTP methods used by the Xapiand server
-    for partial document updates and binary storage operations.
-    """
-
-    def merge(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        """Send a MERGE request.
-
-        Args:
-            url: URL for the request.
-            data: Body to attach to the request.
-            **kwargs: Optional arguments passed to ``Session.request``.
-
-        Returns:
-            requests.Response: Server response.
-        """
-        return self.request('MERGE', url, data=data, **kwargs)
-
-    def store(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        """Send a STORE request.
-
-        Args:
-            url: URL for the request.
-            data: Body to attach to the request.
-            **kwargs: Optional arguments passed to ``Session.request``.
-
-        Returns:
-            requests.Response: Server response.
-        """
-        return self.request('STORE', url, data=data, **kwargs)
-
-
 class NotFoundError(ObjectDoesNotExist):
     """Raised when a requested document is not found (HTTP 404).
 
@@ -146,16 +112,16 @@ class NotFoundError(ObjectDoesNotExist):
     """
 
 
-TransportError = requests.HTTPError
+TransportError = httpx.HTTPStatusError
 
 
 NA = object()
 
 
 class Xapiand:
-    """Client for communicating with a Xapiand search engine server.
+    """Async client for communicating with a Xapiand search engine server.
 
-    Manages HTTP connections and provides methods for all Xapiand REST
+    Manages HTTP connections and provides async methods for all Xapiand REST
     operations: search, get, post, put, patch, merge, delete, store,
     stats, and head.
 
@@ -174,27 +140,29 @@ class Xapiand:
 
     Example:
         >>> client = Xapiand(host='localhost', port=8880)
-        >>> results = client.search('myindex', query='hello world')
-        >>> doc = client.get('myindex', id='doc1')
+        >>> results = await client.search('myindex', query='hello world')
+        >>> doc = await client.get('myindex', id='doc1')
     """
 
     NotFoundError = NotFoundError
     NA = NA
 
-    session = Session()
-    session.trust_env = False
-    session.mount('http://', requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100))
+    session = httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=100),
+        trust_env=False,
+        follow_redirects=False,
+    )
     _methods = dict(
-        search=(session.get, 'results'),
-        stats=(session.get, 'result'),
-        get=(session.get, 'result'),
-        delete=(session.delete, 'result'),
-        head=(session.head, 'result'),
-        post=(session.post, 'result'),
-        put=(session.put, 'result'),
-        patch=(session.patch, 'result'),
-        merge=(session.merge, 'result'),
-        store=(session.store, 'result'),
+        search=('GET', 'results'),
+        stats=('GET', 'result'),
+        get=('GET', 'result'),
+        delete=('DELETE', 'result'),
+        head=('HEAD', 'result'),
+        post=('POST', 'result'),
+        put=('PUT', 'result'),
+        patch=('PATCH', 'result'),
+        merge=('MERGE', 'result'),
+        store=('STORE', 'result'),
     )
 
     def __init__(self, host: str | None = None, port: str | int | None = None,
@@ -288,7 +256,7 @@ class Xapiand:
 
         return f'http://{host}/{index}{nodename}{action_request}'
 
-    def _send_request(self, action_request: str, index: IndexSpec,
+    async def _send_request(self, action_request: str, index: IndexSpec,
             host: str | None = None, port: str | int | None = None,
             nodename: str | None = None, id: str | None = None,
             body: dict | list | str | None = None, default: Any = NA,
@@ -314,7 +282,7 @@ class Xapiand:
                 ``merge``, ``delete``, and ``get`` actions. If not
                 provided (``NA``), a ``NotFoundError`` is raised instead.
             **kwargs: Additional keyword arguments passed to the underlying
-                requests method (e.g., ``params``, ``headers``, ``json``,
+                HTTP request (e.g., ``params``, ``headers``, ``json``,
                 ``msgpack``).
 
         Returns:
@@ -327,21 +295,20 @@ class Xapiand:
             NotFoundError: If the response status is 404 and no ``default``
                 was provided (only for ``patch``, ``merge``, ``delete``,
                 ``get`` actions).
-            requests.HTTPError: If the response status indicates an error
+            httpx.HTTPStatusError: If the response status indicates an error
                 (other than handled 404s).
         """
 
-        method, key = self._methods[action_request]
+        http_method, key = self._methods[action_request]
         url = self._build_url(action_request, index, host, port, nodename, id)
 
         if action_request == 'search' and body is not None:
-            method, key = self._methods['post']
+            http_method, key = self._methods['post']
 
         params = kwargs.pop('params', None)
         if params is not None:
             kwargs['params'] = {k.replace('__', '.'): (v and 1 or 0) if isinstance(v, bool) else v for k, v in params.items() if k not in ('commit', 'volatile', 'pretty', 'indent') or v}
 
-        kwargs.setdefault('allow_redirects', False)
         headers = kwargs.setdefault('headers', {})
         accept = headers.setdefault('accept', self.default_accept)
         headers.setdefault('accept-encoding', self.default_accept_encoding)
@@ -384,16 +351,16 @@ class Xapiand:
                     body = json.dumps(body, ensure_ascii=True)
             elif os.path.isfile(body):
                 body = open(body, 'r')
-            res = method(url, body, **kwargs)
+            res = await self.session.request(http_method, url, content=body, **kwargs)
         else:
-            data = kwargs.get('data')
+            data = kwargs.pop('data', None)
             if data:
                 if is_msgpack:
-                    kwargs['data'] = msgpack.dumps(data)
+                    kwargs['content'] = msgpack.dumps(data)
                 elif is_json:
-                    kwargs['data'] = json.dumps(data, ensure_ascii=True)
+                    kwargs['content'] = json.dumps(data, ensure_ascii=True)
             logger.debug(f"@@@>> URL: {url}  ::  KWARGS: {kwargs}")
-            res = method(url, **kwargs)
+            res = await self.session.request(http_method, url, **kwargs)
 
         if res.status_code == 404 and action_request in ('patch', 'merge', 'delete', 'get'):
             if default is NA:
@@ -434,7 +401,7 @@ class Xapiand:
 
         return content
 
-    def search(self, index: IndexSpec, query: str | None = None,
+    async def search(self, index: IndexSpec, query: str | None = None,
             partial: str | None = None, terms: str | None = None,
             offset: int | str | None = None,
             check_at_least: int | None = None, limit: int | None = None,
@@ -497,9 +464,9 @@ class Xapiand:
                     kwargs['params']['offset'] = 0
                 else:
                     kwargs['params']['offset'] = offset
-        return self._send_request('search', index, **kwargs)
+        return await self._send_request('search', index, **kwargs)
 
-    def stats(self, index: IndexSpec, pretty: bool = False,
+    async def stats(self, index: IndexSpec, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Retrieve statistics for an index.
 
@@ -516,9 +483,9 @@ class Xapiand:
         kwargs['params'] = dict(
             pretty=pretty,
         )
-        return self._send_request('stats', index, **kwargs)
+        return await self._send_request('stats', index, **kwargs)
 
-    def head(self, index: IndexSpec, id: str, pretty: bool = False,
+    async def head(self, index: IndexSpec, id: str, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Check if a document exists (HEAD request).
 
@@ -537,9 +504,9 @@ class Xapiand:
         kwargs['params'] = dict(
             pretty=pretty,
         )
-        return self._send_request('head', index, **kwargs)
+        return await self._send_request('head', index, **kwargs)
 
-    def count(self, index: IndexSpec, body: dict | list | str | None = None,
+    async def count(self, index: IndexSpec, body: dict | list | str | None = None,
             query: str | None = None, commit: bool | None = None,
             pretty: bool = False, volatile: bool = False,
             kwargs: dict | None = None, **kw) -> DictObject:
@@ -571,9 +538,9 @@ class Xapiand:
             kwargs['params']['query'] = query
         if body is not None:
             kwargs['body'] = body
-        return self._send_request('search', index, **kwargs)
+        return await self._send_request('search', index, **kwargs)
 
-    def get(self, index: IndexSpec, id: str, accept: str | None = None,
+    async def get(self, index: IndexSpec, id: str, accept: str | None = None,
             default: Any = NA, pretty: bool = False, volatile: bool = False,
             kwargs: dict | None = None) -> DictObject | Any:
         """Retrieve a document by ID from an index.
@@ -609,9 +576,9 @@ class Xapiand:
             volatile=volatile,
         )
         kwargs['default'] = default
-        return self._send_request('get', index, **kwargs)
+        return await self._send_request('get', index, **kwargs)
 
-    def delete(self, index: IndexSpec, id: str, commit: bool | None = None,
+    async def delete(self, index: IndexSpec, id: str, commit: bool | None = None,
             pretty: bool = False, kwargs: dict | None = None) -> DictObject:
         """Delete a document by ID from an index.
 
@@ -636,9 +603,9 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('delete', index, **kwargs)
+        return await self._send_request('delete', index, **kwargs)
 
-    def post(self, index: IndexSpec, body: dict | list | str,
+    async def post(self, index: IndexSpec, body: dict | list | str,
             commit: bool | None = None, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Create a new document in an index (server-assigned ID).
@@ -661,9 +628,9 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('post', index, **kwargs)
+        return await self._send_request('post', index, **kwargs)
 
-    def put(self, index: IndexSpec, body: dict | list | str, id: str,
+    async def put(self, index: IndexSpec, body: dict | list | str, id: str,
             commit: bool | None = None, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Create or replace a document with a specific ID.
@@ -688,9 +655,9 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('put', index, **kwargs)
+        return await self._send_request('put', index, **kwargs)
 
-    def index(self, index: IndexSpec, body: dict | list | str, id: str,
+    async def index(self, index: IndexSpec, body: dict | list | str, id: str,
             commit: bool | None = None, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Create or replace a document (alias for ``put``).
@@ -708,9 +675,9 @@ class Xapiand:
         Returns:
             DictObject: Server response with the document metadata.
         """
-        return self.put(index, body, id, commit, pretty, kwargs)
+        return await self.put(index, body, id, commit, pretty, kwargs)
 
-    def patch(self, index: IndexSpec, id: str, body: dict | list | str,
+    async def patch(self, index: IndexSpec, id: str, body: dict | list | str,
             commit: bool | None = None, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Partially update a document by ID.
@@ -741,9 +708,9 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('patch', index, **kwargs)
+        return await self._send_request('patch', index, **kwargs)
 
-    def update(self, index: IndexSpec, id: str, body: dict | list | str,
+    async def update(self, index: IndexSpec, id: str, body: dict | list | str,
             content_type: str | None = None, commit: bool | None = None,
             pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
@@ -772,8 +739,8 @@ class Xapiand:
         if content_type is not None:
             kwargs.setdefault('headers', {})
             kwargs['headers']['content-type'] = content_type
-            return self.put(index, body, id, commit, pretty, kwargs)
-        return self.merge(
+            return await self.put(index, body, id, commit, pretty, kwargs)
+        return await self.merge(
             index=index,
             id=id,
             body=body,
@@ -783,7 +750,7 @@ class Xapiand:
             kwargs=kwargs,
         )
 
-    def merge(self, index: IndexSpec, id: str, body: dict | list | str,
+    async def merge(self, index: IndexSpec, id: str, body: dict | list | str,
             content_type: str | None = None, commit: bool | None = None,
             pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
@@ -819,9 +786,9 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('merge', index, **kwargs)
+        return await self._send_request('merge', index, **kwargs)
 
-    def store(self, index: IndexSpec, id: str, body: dict | list | str,
+    async def store(self, index: IndexSpec, id: str, body: dict | list | str,
             commit: bool | None = None, pretty: bool = False,
             kwargs: dict | None = None) -> DictObject:
         """Store binary content for a document using the STORE HTTP method.
@@ -846,7 +813,7 @@ class Xapiand:
             commit=self.commit if commit is None else commit,
             pretty=pretty,
         )
-        return self._send_request('store', index, **kwargs)
+        return await self._send_request('store', index, **kwargs)
 
 
 client = Xapiand(host=XAPIAND_HOST, port=XAPIAND_PORT, commit=XAPIAND_COMMIT, prefix=XAPIAND_PREFIX)

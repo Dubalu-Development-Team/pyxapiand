@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyxapiand"
-version = "1.0.0"
+version = "2.0.0"
 description = "Python client library for the Xapiand search engine"
 readme = "README.md"
 license = "MIT"
@@ -22,14 +22,18 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
 ]
 dependencies = [
-    "requests",
+    "httpx",
 ]
 
 [project.optional-dependencies]
 msgpack = ["msgpack"]
+test = ["pytest", "pytest-asyncio"]
 
 [project.urls]
 Homepage = "https://github.com/Dubalu-Development-Team/pyxapiand"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 where = ["src"]
