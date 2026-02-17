@@ -35,7 +35,7 @@ pytest tests/test_client.py  # run a single test module
 
 ## Architecture
 
-The package (`src/pyxapiand/`) has four modules:
+The package (`src/xapiand/`) has four modules:
 
 - **`__init__.py`** — Core client. The `Xapiand` class wraps all HTTP communication with the Xapiand server. A `Session` subclass of `requests.Session` adds custom HTTP methods `MERGE` and `STORE`. A module-level `client` singleton is instantiated at import time.
 - **`collections.py`** — `DictObject` and `OrderedDictObject`: dict subclasses that allow attribute-style access (`obj.key` instead of `obj['key']`). `DictObject` is used as `object_pairs_hook` when deserializing JSON/msgpack responses.

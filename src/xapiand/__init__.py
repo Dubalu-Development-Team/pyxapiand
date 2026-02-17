@@ -32,7 +32,7 @@ overrides from Django settings. A module-level ``client`` singleton is
 created at import time using these defaults.
 
 Example:
-    >>> from pyxapiand import client
+    >>> from xapiand import client
     >>> results = client.search('myindex', query='hello')
     >>> results['hits']
     [...]
@@ -77,7 +77,7 @@ from .collections import DictObject
 __version__ = '1.0.0'
 __all__ = ['Xapiand', 'TransportError']
 
-logger = logging.getLogger('pyxapiand')
+logger = logging.getLogger('xapiand')
 
 OFFSET_LIMIT = 100000  # LIMIT TO AVOID SLOWDOWN XAPIAND WITH HIGH OFFSET
 

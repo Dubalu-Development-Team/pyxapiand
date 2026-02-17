@@ -1,7 +1,7 @@
-"""Tests for pyxapiand.constants — Xapian term constants."""
+"""Tests for xapiand.constants — Xapian term constants."""
 from __future__ import annotations
 
-from pyxapiand import constants
+from xapiand import constants
 
 
 class TestDateConstants:

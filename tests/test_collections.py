@@ -1,7 +1,7 @@
-"""Tests for pyxapiand.collections — DictObject and OrderedDictObject."""
+"""Tests for xapiand.collections — DictObject and OrderedDictObject."""
 from __future__ import annotations
 
-from pyxapiand.collections import DictObject, OrderedDictObject
+from xapiand.collections import DictObject, OrderedDictObject
 
 
 # ── DictObject ─────────────────────────────────────────────────────────
