@@ -24,12 +24,11 @@
 
 Provides the ``Xapiand`` async client class for communicating with a Xapiand
 search engine server over HTTP. Supports JSON and msgpack serialization,
-Django settings integration, and all Xapiand REST operations.
+and all Xapiand REST operations.
 
 Configuration is read from environment variables (``XAPIAND_HOST``,
-``XAPIAND_PORT``, ``XAPIAND_COMMIT``, ``XAPIAND_PREFIX``), with optional
-overrides from Django settings. A module-level ``client`` singleton is
-created at import time using these defaults.
+``XAPIAND_PORT``, ``XAPIAND_COMMIT``, ``XAPIAND_PREFIX``). A module-level
+``client`` singleton is created at import time using these defaults.
 
 Example:
     >>> from xapiand import client
@@ -43,28 +42,12 @@ import os
 import logging
 from typing import Any
 
-try:
-    from django.core.exceptions import ObjectDoesNotExist
-except ImportError:
-    ObjectDoesNotExist = Exception
+import json
 
 try:
-    from dfw.core.utils.datastructures.nested import NestedDict
+    import msgpack
 except ImportError:
-    NestedDict = dict
-
-try:
-    from dfw.core.utils import json
-except ImportError:
-    import json
-
-try:
-    from dfw.core.utils import msgpack
-except ImportError:
-    try:
-        import msgpack
-    except ImportError:
-        msgpack = None
+    msgpack = None
 
 try:
     import httpx
@@ -102,25 +85,12 @@ XAPIAND_PORT = os.environ.get('XAPIAND_PORT', 8880)
 XAPIAND_COMMIT = os.environ.get('XAPIAND_COMMIT', False)
 XAPIAND_PREFIX = os.environ.get('XAPIAND_PREFIX', 'default')
 
-try:
-    from django.conf import settings
-    XAPIAND_HOST = getattr(settings, 'XAPIAND_HOST', XAPIAND_HOST)
-    XAPIAND_PORT = getattr(settings, 'XAPIAND_PORT', XAPIAND_PORT)
-    XAPIAND_COMMIT = getattr(settings, 'XAPIAND_COMMIT', XAPIAND_COMMIT)
-    XAPIAND_PREFIX = getattr(settings, 'XAPIAND_PREFIX', getattr(settings, 'PROJECT_SUFFIX', XAPIAND_PREFIX))
-except Exception:
-    settings = None
-
 
 type IndexSpec = str | tuple[str, ...] | list[str] | set[str]
 
 
-class NotFoundError(ObjectDoesNotExist):
-    """Raised when a requested document is not found (HTTP 404).
-
-    Inherits from Django's ``ObjectDoesNotExist`` when Django is available,
-    otherwise falls back to the base ``Exception`` class.
-    """
+class NotFoundError(Exception):
+    """Raised when a requested document is not found (HTTP 404)."""
 
 
 TransportError = httpx.HTTPStatusError

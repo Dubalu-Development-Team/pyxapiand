@@ -7,7 +7,6 @@ Async Python client library for [Xapiand](https://github.com/pber/xapiand), a RE
 - **Fully async** — built on `httpx.AsyncClient` for native `asyncio` support.
 - Full coverage of Xapiand REST operations: search, get, post, put, patch, merge, delete, store, stats, and head.
 - Automatic serialization/deserialization with JSON and [msgpack](https://msgpack.org/) (preferred when available).
-- Django settings integration for seamless configuration in Django projects.
 - Attribute-style access on response objects (`result.hits` instead of `result['hits']`).
 - Custom HTTP methods (`MERGE`, `STORE`) supported natively via `httpx`.
 
@@ -85,16 +84,14 @@ print(results.total)  # estimated matches
 
 ## Configuration
 
-The client reads configuration from environment variables, with optional overrides from Django settings:
+The client reads configuration from environment variables:
 
-| Environment Variable | Django Setting          | Default     | Description                          |
-|----------------------|-------------------------|-------------|--------------------------------------|
-| `XAPIAND_HOST`      | `settings.XAPIAND_HOST` | `127.0.0.1` | Server hostname                      |
-| `XAPIAND_PORT`      | `settings.XAPIAND_PORT` | `8880`      | Server port                          |
-| `XAPIAND_COMMIT`    | `settings.XAPIAND_COMMIT` | `False`   | Auto-commit write operations         |
-| `XAPIAND_PREFIX`    | `settings.XAPIAND_PREFIX` | `default` | URL prefix prepended to index paths  |
-
-Django settings take precedence over environment variables when Django is available.
+| Environment Variable | Default     | Description                          |
+|----------------------|-------------|--------------------------------------|
+| `XAPIAND_HOST`      | `127.0.0.1` | Server hostname                      |
+| `XAPIAND_PORT`      | `8880`      | Server port                          |
+| `XAPIAND_COMMIT`    | `False`     | Auto-commit write operations         |
+| `XAPIAND_PREFIX`    | `default`   | URL prefix prepended to index paths  |
 
 ### Client initialization
 
@@ -263,8 +260,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-When Django is installed, `NotFoundError` is a subclass of `django.core.exceptions.ObjectDoesNotExist`, making it compatible with Django's error handling patterns.
 
 ## Utilities
 

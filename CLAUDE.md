@@ -31,7 +31,7 @@ pip install -e ".[msgpack,test]" # editable install for development
 ## Dependencies
 
 - **Required**: `httpx`
-- **Optional**: `msgpack` (preferred serialization when available), Django (for settings integration), `dfw` (Dubalu Framework utilities)
+- **Optional**: `msgpack` (preferred serialization when available)
 - **Test**: `pytest`, `pytest-asyncio`
 
 ## Testing
@@ -55,14 +55,14 @@ The package (`src/xapiand/`) has four modules:
 
 ## Configuration
 
-The client reads config from environment variables, with Django settings as override:
+The client reads config from environment variables:
 
-| Env Var | Django Setting | Default |
-|---------|---------------|---------|
-| `XAPIAND_HOST` | `settings.XAPIAND_HOST` | `127.0.0.1` |
-| `XAPIAND_PORT` | `settings.XAPIAND_PORT` | `8880` |
-| `XAPIAND_COMMIT` | `settings.XAPIAND_COMMIT` | `False` |
-| `XAPIAND_PREFIX` | `settings.XAPIAND_PREFIX` | `default` |
+| Env Var | Default |
+|---------|---------|
+| `XAPIAND_HOST` | `127.0.0.1` |
+| `XAPIAND_PORT` | `8880` |
+| `XAPIAND_COMMIT` | `False` |
+| `XAPIAND_PREFIX` | `default` |
 
 ## Docstring Conventions
 
@@ -107,5 +107,5 @@ Test modules, test classes, and test helper functions/methods also require docst
 - HTTP requests go through `self.session.request(http_method, url, content=body, **kwargs)` where `session` is an `httpx.AsyncClient` class attribute.
 - Search responses are restructured: `#query` → top-level with `#hits` → `hits`, `#total_count` → `count`, `#matches_estimated` → `total`; `#aggregations` is extracted separately.
 - URL scheme: `http://{host}:{port}/{prefix}{index}/{id}{@nodename}{:command}`
-- 404 responses on `patch`/`merge`/`delete`/`get` raise `NotFoundError` (subclass of Django's `ObjectDoesNotExist` when available) unless a `default` value is provided.
+- 404 responses on `patch`/`merge`/`delete`/`get` raise `NotFoundError` unless a `default` value is provided.
 - `TransportError` is an alias for `httpx.HTTPStatusError`.
