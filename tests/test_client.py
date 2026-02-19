@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, date, time
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
 import pytest
@@ -16,6 +18,9 @@ from xapiand import (
     XAPIAND_HOST,
     XAPIAND_PORT,
     XAPIAND_PREFIX,
+    _serialize_default,
+    _deserialize_value,
+    _deserialize_object_pairs_hook,
 )
 from xapiand.collections import DictObject
 
@@ -357,7 +362,7 @@ class TestSendRequest:
         c.session = self.client.session
         with patch('xapiand.msgpack', mock_msgpack):
             await c._send_request('post', 'idx', body={'key': 'val'})
-        mock_msgpack.dumps.assert_called_once_with({'key': 'val'})
+        mock_msgpack.dumps.assert_called_once_with({'key': 'val'}, default=_serialize_default)
 
     async def test_body_file_path(self):
         resp = _mock_response(content=_json_content({"ok": True}))
@@ -384,7 +389,7 @@ class TestSendRequest:
         c.session = self.client.session
         with patch('xapiand.msgpack', mock_msgpack):
             await c._send_request('post', 'idx', data={'k': 'v'})
-        mock_msgpack.dumps.assert_called_once_with({'k': 'v'})
+        mock_msgpack.dumps.assert_called_once_with({'k': 'v'}, default=_serialize_default)
 
     async def test_response_unknown_content_type(self):
         resp = _mock_response(content=b'raw bytes', content_type='application/octet-stream')
@@ -399,7 +404,7 @@ class TestSendRequest:
         self._patch_method('get', resp)
         with patch('xapiand.msgpack', mock_msgpack):
             result = await self.client._send_request('get', 'idx', id='doc1')
-        mock_msgpack.loads.assert_called_once()
+        mock_msgpack.loads.assert_called_once_with(b'\x80', object_pairs_hook=_deserialize_object_pairs_hook)
         assert result['title'] == 'hello'
 
     async def test_params_bool_conversion(self):
@@ -898,6 +903,146 @@ class TestModuleSingleton:
         assert client.port == XAPIAND_PORT
 
 
+# ── _serialize_default ───────────────────────────────────────────────────────────────────────────────────────
+
+class TestSerializeDefault:
+    """Tests for _serialize_default custom JSON/msgpack serializer."""
+
+    def test_decimal(self):
+        assert _serialize_default(Decimal('19.99')) == 19.99
+
+    def test_decimal_integer(self):
+        assert _serialize_default(Decimal('42')) == 42.0
+
+    def test_datetime(self):
+        dt = datetime(2025, 6, 15, 12, 30, 45)
+        assert _serialize_default(dt) == '2025-06-15T12:30:45'
+
+    def test_date(self):
+        d = date(2025, 6, 15)
+        assert _serialize_default(d) == '2025-06-15'
+
+    def test_time(self):
+        t = time(12, 30, 45)
+        assert _serialize_default(t) == '12:30:45'
+
+    def test_unsupported_type_raises(self):
+        with pytest.raises(TypeError, match="not JSON/msgpack serializable"):
+            _serialize_default(object())
+
+
+class TestSerializationInSendRequest:
+    """Tests for Decimal and datetime serialization through _send_request."""
+
+    def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
+        self.client = Xapiand(host='localhost', port=8880, prefix=None,
+                              default_accept='application/json')
+
+    def _patch_method(self, response):
+        """Replace the client session with a mock that returns a canned response.
+
+        Args:
+            response: The mock httpx.Response to return.
+
+        Returns:
+            The AsyncMock bound to ``session.request``.
+        """
+        mock_session = MagicMock()
+        mock_session.request = AsyncMock(return_value=response)
+        self.client.session = mock_session
+        return mock_session.request
+
+    def teardown_method(self):
+        """Remove the per-instance session mock so the class attribute is restored."""
+        self.client.__dict__.pop('session', None)
+
+    async def test_body_with_decimal_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        await self.client._send_request('post', 'idx', body={'price': Decimal('19.99')})
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['price'] == 19.99
+
+    async def test_body_with_datetime_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        dt = datetime(2025, 6, 15, 12, 30, 45)
+        await self.client._send_request('post', 'idx', body={'timestamp': dt})
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['timestamp'] == '2025-06-15T12:30:45'
+
+    async def test_body_with_date_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        d = date(2025, 6, 15)
+        await self.client._send_request('post', 'idx', body={'day': d})
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['day'] == '2025-06-15'
+
+    async def test_body_with_time_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        t = time(12, 30, 45)
+        await self.client._send_request('post', 'idx', body={'at': t})
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['at'] == '12:30:45'
+
+    async def test_nested_body_with_mixed_types_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        body = {
+            'data': {
+                'timestamp': datetime(2025, 1, 1, 0, 0, 0),
+                'price': Decimal('9.99'),
+                'date': date(2025, 1, 1),
+            },
+            'tags': ['a', 'b'],
+        }
+        await self.client._send_request('post', 'idx', body=body)
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['data']['timestamp'] == '2025-01-01T00:00:00'
+        assert body_sent['data']['price'] == 9.99
+        assert body_sent['data']['date'] == '2025-01-01'
+        assert body_sent['tags'] == ['a', 'b']
+
+    async def test_body_with_decimal_msgpack(self):
+        mock_msgpack = MagicMock()
+        mock_msgpack.dumps.return_value = b'\x80'
+        resp = _mock_response(content=_json_content({"ok": True}))
+        self._patch_method(resp)
+        c = Xapiand(host='localhost', port=8880, prefix=None,
+                     default_accept='application/x-msgpack')
+        c.session = self.client.session
+        body = {'price': Decimal('19.99')}
+        with patch('xapiand.msgpack', mock_msgpack):
+            await c._send_request('post', 'idx', body=body)
+        mock_msgpack.dumps.assert_called_once()
+        call_kwargs = mock_msgpack.dumps.call_args
+        assert call_kwargs.kwargs['default'] is _serialize_default
+
+    async def test_data_kwarg_with_decimal_json(self):
+        resp = _mock_response(content=_json_content({"ok": True}))
+        method = self._patch_method(resp)
+        await self.client._send_request('post', 'idx', data={'price': Decimal('5.50')})
+        body_sent = json.loads(method.call_args.kwargs['content'])
+        assert body_sent['price'] == 5.5
+
+    async def test_data_kwarg_with_decimal_msgpack(self):
+        mock_msgpack = MagicMock()
+        mock_msgpack.dumps.return_value = b'\x80'
+        resp = _mock_response(content=_json_content({"ok": True}))
+        self._patch_method(resp)
+        c = Xapiand(host='localhost', port=8880, prefix=None,
+                     default_accept='application/x-msgpack')
+        c.session = self.client.session
+        with patch('xapiand.msgpack', mock_msgpack):
+            await c._send_request('post', 'idx', data={'price': Decimal('5.50')})
+        mock_msgpack.dumps.assert_called_once()
+        call_kwargs = mock_msgpack.dumps.call_args
+        assert call_kwargs.kwargs['default'] is _serialize_default
+
+
 # ── Module-level import paths ────────────────────────────────────────────────────────────────────────────────
 
 class TestModuleImportPaths:
@@ -927,4 +1072,210 @@ class TestModuleImportPaths:
                 sys.modules['xapiand'] = saved_xapiand
             if saved_xapiand_coll is not None:
                 sys.modules['xapiand.collections'] = saved_xapiand_coll
+
+
+# ── _deserialize_value ───────────────────────────────────────────────────────────────────────────────────────
+
+class TestDeserializeValue:
+    """Tests for _deserialize_value type conversion logic."""
+
+    def test_float_to_decimal(self):
+        result = _deserialize_value(3.14)
+        assert result == Decimal('3.14')
+        assert isinstance(result, Decimal)
+
+    def test_float_zero(self):
+        result = _deserialize_value(0.0)
+        assert result == Decimal('0.0')
+        assert isinstance(result, Decimal)
+
+    def test_datetime_string(self):
+        result = _deserialize_value('2025-06-15T12:30:45')
+        assert result == datetime(2025, 6, 15, 12, 30, 45)
+        assert isinstance(result, datetime)
+
+    def test_datetime_with_microseconds(self):
+        result = _deserialize_value('2025-06-15T12:30:45.123456')
+        assert result == datetime(2025, 6, 15, 12, 30, 45, 123456)
+
+    def test_datetime_with_timezone_z(self):
+        result = _deserialize_value('2025-06-15T12:30:45Z')
+        assert isinstance(result, datetime)
+
+    def test_datetime_with_timezone_offset(self):
+        result = _deserialize_value('2025-06-15T12:30:45+05:30')
+        assert isinstance(result, datetime)
+
+    def test_datetime_with_space_separator(self):
+        result = _deserialize_value('2025-06-15 12:30:45')
+        assert result == datetime(2025, 6, 15, 12, 30, 45)
+
+    def test_date_string(self):
+        result = _deserialize_value('2025-06-15')
+        assert result == date(2025, 6, 15)
+        assert isinstance(result, date)
+        assert not isinstance(result, datetime)
+
+    def test_time_string(self):
+        result = _deserialize_value('12:30:45')
+        assert result == time(12, 30, 45)
+        assert isinstance(result, time)
+
+    def test_time_with_microseconds(self):
+        result = _deserialize_value('12:30:45.123456')
+        assert result == time(12, 30, 45, 123456)
+
+    def test_time_with_timezone(self):
+        result = _deserialize_value('12:30:45+02:00')
+        assert isinstance(result, time)
+
+    def test_list_recursion(self):
+        result = _deserialize_value([1.5, '2025-01-01', 'hello'])
+        assert result[0] == Decimal('1.5')
+        assert result[1] == date(2025, 1, 1)
+        assert result[2] == 'hello'
+
+    def test_nested_list(self):
+        result = _deserialize_value([[1.0, 2.0], [3.0]])
+        assert result == [[Decimal('1.0'), Decimal('2.0')], [Decimal('3.0')]]
+
+    def test_non_matching_string_unchanged(self):
+        assert _deserialize_value('hello world') == 'hello world'
+
+    def test_partial_date_string_unchanged(self):
+        assert _deserialize_value('2025-06') == '2025-06'
+
+    def test_int_passthrough(self):
+        assert _deserialize_value(42) == 42
+        assert isinstance(_deserialize_value(42), int)
+
+    def test_bool_passthrough(self):
+        assert _deserialize_value(True) is True
+
+    def test_none_passthrough(self):
+        assert _deserialize_value(None) is None
+
+    def test_dict_passthrough(self):
+        d = {'key': 'value'}
+        assert _deserialize_value(d) is d
+
+    def test_string_with_extra_chars_not_matched(self):
+        assert _deserialize_value('abc2025-06-15') == 'abc2025-06-15'
+        assert _deserialize_value('2025-06-15abc') == '2025-06-15abc'
+
+
+class TestDeserializeObjectPairsHook:
+    """Tests for _deserialize_object_pairs_hook DictObject construction."""
+
+    def test_returns_dict_object(self):
+        result = _deserialize_object_pairs_hook([('a', 1)])
+        assert isinstance(result, DictObject)
+
+    def test_deserializes_values(self):
+        pairs = [('price', 9.99), ('date', '2025-06-15')]
+        result = _deserialize_object_pairs_hook(pairs)
+        assert result['price'] == Decimal('9.99')
+        assert result['date'] == date(2025, 6, 15)
+
+
+# ── Deserialization in _send_request ─────────────────────────────────────────────────────────────────────────
+
+class TestDeserializationInSendRequest:
+    """Tests for Decimal and datetime deserialization through _send_request."""
+
+    def setup_method(self):
+        """Create a client with JSON accept and no prefix."""
+        self.client = Xapiand(host='localhost', port=8880, prefix=None,
+                              default_accept='application/json')
+
+    def _patch_method(self, response):
+        """Replace the client session with a mock that returns a canned response.
+
+        Args:
+            response: The mock httpx.Response to return.
+
+        Returns:
+            The AsyncMock bound to ``session.request``.
+        """
+        mock_session = MagicMock()
+        mock_session.request = AsyncMock(return_value=response)
+        self.client.session = mock_session
+        return mock_session.request
+
+    def teardown_method(self):
+        """Remove the per-instance session mock so the class attribute is restored."""
+        self.client.__dict__.pop('session', None)
+
+    async def test_json_float_to_decimal(self):
+        resp = _mock_response(content=b'{"price": 19.99}')
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['price'] == Decimal('19.99')
+        assert isinstance(result['price'], Decimal)
+
+    async def test_json_datetime_string(self):
+        resp = _mock_response(content=_json_content({"timestamp": "2025-06-15T12:30:45"}))
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['timestamp'] == datetime(2025, 6, 15, 12, 30, 45)
+
+    async def test_json_date_string(self):
+        resp = _mock_response(content=_json_content({"day": "2025-06-15"}))
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['day'] == date(2025, 6, 15)
+
+    async def test_json_time_string(self):
+        resp = _mock_response(content=_json_content({"at": "12:30:45"}))
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['at'] == time(12, 30, 45)
+
+    async def test_json_nested_mixed_types(self):
+        data = {
+            "product": {
+                "price": 9.99,
+                "created": "2025-01-01T00:00:00",
+                "tags": ["sale", "new"],
+            },
+            "count": 42,
+        }
+        resp = _mock_response(content=json.dumps(data).encode())
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert isinstance(result['product']['price'], Decimal)
+        assert result['product']['price'] == Decimal('9.99')
+        assert result['product']['created'] == datetime(2025, 1, 1, 0, 0, 0)
+        assert result['product']['tags'] == ['sale', 'new']
+        assert result['count'] == 42
+
+    async def test_json_list_with_floats(self):
+        resp = _mock_response(content=b'{"values": [1.1, 2.2, 3.3]}')
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert all(isinstance(v, Decimal) for v in result['values'])
+        assert result['values'] == [Decimal('1.1'), Decimal('2.2'), Decimal('3.3')]
+
+    async def test_msgpack_float_to_decimal(self):
+        mock_msgpack = MagicMock()
+        mock_msgpack.loads.return_value = DictObject(price=Decimal('19.99'))
+        resp = _mock_response(content=b'\x80', content_type='application/x-msgpack')
+        self._patch_method(resp)
+        with patch('xapiand.msgpack', mock_msgpack):
+            result = await self.client._send_request('get', 'idx', id='doc1')
+        mock_msgpack.loads.assert_called_once_with(b'\x80', object_pairs_hook=_deserialize_object_pairs_hook)
+        assert result['price'] == Decimal('19.99')
+
+    async def test_json_non_matching_string_unchanged(self):
+        resp = _mock_response(content=_json_content({"name": "hello world"}))
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['name'] == 'hello world'
+
+    async def test_json_integer_unchanged(self):
+        resp = _mock_response(content=_json_content({"count": 42}))
+        self._patch_method(resp)
+        result = await self.client._send_request('get', 'idx', id='doc1')
+        assert result['count'] == 42
+        assert isinstance(result['count'], int)
 

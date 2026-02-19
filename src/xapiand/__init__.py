@@ -39,7 +39,10 @@ Example:
 from __future__ import annotations
 
 import os
+import re
 import logging
+from datetime import datetime, date, time
+from decimal import Decimal
 from typing import Any
 
 import json
@@ -69,6 +72,8 @@ __all__ = [
     'XAPIAND_PORT',
     'XAPIAND_COMMIT',
     'XAPIAND_PREFIX',
+    '_serialize_default',
+    '_deserialize_value',
 ]
 
 logger = logging.getLogger('xapiand')
@@ -97,6 +102,76 @@ TransportError = httpx.HTTPStatusError
 
 
 NA = object()
+
+
+_DATETIME_RE = re.compile(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}(?::?\d{2})?|Z)?$')
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_TIME_RE = re.compile(r'^\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}(?::?\d{2})?|Z)?$')
+
+
+def _deserialize_value(value: Any) -> Any:
+    """Recursively convert response values to rich Python types.
+
+    Converts floats to ``Decimal``, and ISO 8601 strings to ``datetime``,
+    ``date``, or ``time`` objects. Lists are recursed into element-wise.
+
+    Args:
+        value: The value to convert.
+
+    Returns:
+        The converted value, or the original value if no conversion applies.
+    """
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        if _DATETIME_RE.fullmatch(value):
+            return datetime.fromisoformat(value)
+        if _DATE_RE.fullmatch(value):
+            return date.fromisoformat(value)
+        if _TIME_RE.fullmatch(value):
+            return time.fromisoformat(value)
+    if isinstance(value, list):
+        return [_deserialize_value(v) for v in value]
+    return value
+
+
+def _deserialize_object_pairs_hook(pairs: list[tuple[str, Any]]) -> DictObject:
+    """Object pairs hook that deserializes values while building a DictObject.
+
+    Used as ``object_pairs_hook`` for ``json.loads`` and ``msgpack.loads``
+    to automatically convert floats to ``Decimal`` and ISO 8601 strings to
+    ``datetime``/``date``/``time``.
+
+    Args:
+        pairs: List of (key, value) tuples from the JSON/msgpack parser.
+
+    Returns:
+        A DictObject with deserialized values.
+    """
+    return DictObject((k, _deserialize_value(v)) for k, v in pairs)
+
+
+def _serialize_default(obj: Any) -> float | str:
+    """Default serializer for json.dumps() and msgpack.dumps().
+
+    Handles types that are not natively serializable by JSON/msgpack:
+    ``Decimal`` is converted to ``float``, and ``datetime``, ``date``,
+    and ``time`` are converted to ISO 8601 strings.
+
+    Args:
+        obj: The object to serialize.
+
+    Returns:
+        A JSON/msgpack-compatible representation of the object.
+
+    Raises:
+        TypeError: If the object type is not supported.
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date, time)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON/msgpack serializable")
 
 
 class Xapiand:
@@ -325,15 +400,15 @@ class Xapiand:
                     body['_schema'] = schema
             if logger.isEnabledFor(logging.DEBUG):
                 try:
-                    verb_body = json.dumps(body, ensure_ascii=True)
+                    verb_body = json.dumps(body, ensure_ascii=True, default=_serialize_default)
                 except Exception:
                     verb_body = body
                 logger.debug(f"@@@>> URL: {url}  ::  BODY: {verb_body}  ::  KWARGS: {kwargs}")
             if isinstance(body, (dict, list)):
                 if is_msgpack:
-                    body = msgpack.dumps(body)
+                    body = msgpack.dumps(body, default=_serialize_default)
                 elif is_json:
-                    body = json.dumps(body, ensure_ascii=True)
+                    body = json.dumps(body, ensure_ascii=True, default=_serialize_default)
             elif os.path.isfile(body):
                 body = open(body, 'r')
             res = await self.session.request(http_method, url, content=body, **kwargs)
@@ -341,9 +416,9 @@ class Xapiand:
             data = kwargs.pop('data', None)
             if data:
                 if is_msgpack:
-                    kwargs['content'] = msgpack.dumps(data)
+                    kwargs['content'] = msgpack.dumps(data, default=_serialize_default)
                 elif is_json:
-                    kwargs['content'] = json.dumps(data, ensure_ascii=True)
+                    kwargs['content'] = json.dumps(data, ensure_ascii=True, default=_serialize_default)
             logger.debug(f"@@@>> URL: {url}  ::  KWARGS: {kwargs}")
             res = await self.session.request(http_method, url, **kwargs)
 
@@ -364,9 +439,9 @@ class Xapiand:
         is_json = 'application/json' in content_type
 
         if is_msgpack:
-            content = msgpack.loads(res.content, object_pairs_hook=DictObject)
+            content = msgpack.loads(res.content, object_pairs_hook=_deserialize_object_pairs_hook)
         elif is_json:
-            content = json.loads(res.content, object_pairs_hook=DictObject)
+            content = json.loads(res.content, object_pairs_hook=_deserialize_object_pairs_hook, parse_float=Decimal)
         else:
             return res.content
 
